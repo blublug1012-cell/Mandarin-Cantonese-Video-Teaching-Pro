@@ -60,7 +60,6 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
     window.print();
   };
 
-  // 关键改进：将 cloudUrl 编码到链接中
   const getStudentUrl = (id: string) => {
     const baseUrl = window.location.origin + window.location.pathname;
     const cloudParam = cloudBaseUrl ? `?c=${encodeURIComponent(btoa(cloudBaseUrl))}` : '';
@@ -294,29 +293,29 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
         </div>
       </main>
 
-      <div className="print-section p-10">
-        <div className="text-center mb-16">
-          <h1 className="text-5xl font-bold mb-4">{lesson.title}</h1>
-          <p className="text-slate-400 text-xl font-medium tracking-widest uppercase">学习讲义 / STUDY HANDOUT</p>
+      <div className="print-section p-8 bg-white max-w-4xl mx-auto">
+        <div className="text-center mb-6">
+          <h1 className="text-3xl font-bold mb-1">{lesson.title}</h1>
+          <p className="text-slate-400 text-[10px] font-bold tracking-widest uppercase">学习讲义 / STUDY HANDOUT</p>
         </div>
         {(lesson.lyrics || []).map((line, idx) => (
-          <div key={line.id} className="lyric-item mb-12 pb-8">
-            <div className="flex flex-wrap gap-x-12 gap-y-16 mb-10">
+          <div key={line.id} className="lyric-item mb-4 pb-2 border-b">
+            <div className="flex flex-wrap gap-x-4 gap-y-6 mb-2">
               {Array.from((line.chinese || '').replace(/\s/g,'')).map((c, i) => (
                 <div key={i} className="flex flex-col items-center">
-                  <span className="text-lg text-slate-400 font-bold mb-2 uppercase tracking-tighter">{(line.pinyin || '').split(/\s+/)[i] || ''}</span>
-                  <span className="text-6xl font-bold pb-2">{c}</span>
+                  <span className="text-[8px] text-slate-400 font-bold mb-0.5 uppercase">{(line.pinyin || '').split(/\s+/)[i] || ''}</span>
+                  <span className="text-2xl font-bold">{c}</span>
                 </div>
               ))}
             </div>
-            <p className="italic text-slate-500 text-3xl mb-8">"{line.english}"</p>
+            <p className="italic text-slate-500 text-sm mb-2">"{line.english}"</p>
             {line.vocabs && line.vocabs.length > 0 && (
-              <div className="grid grid-cols-2 gap-6 bg-slate-50 p-8 rounded-3xl">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 bg-slate-50 p-2 rounded-lg">
                 {line.vocabs.map((v, vi) => (
-                  <div key={vi} className="text-xl">
-                    <span className="font-bold text-indigo-600 text-2xl">{v.char}</span>
-                    <span className="text-slate-400 ml-3">({v.pinyin})</span>
-                    <span className="ml-6 text-slate-700 font-medium">{v.explanation}</span>
+                  <div key={vi} className="text-[10px]">
+                    <span className="font-bold text-indigo-600">{v.char}</span>
+                    <span className="text-slate-400 ml-1">({v.pinyin})</span>
+                    <span className="ml-2 text-slate-700">{v.explanation}</span>
                   </div>
                 ))}
               </div>

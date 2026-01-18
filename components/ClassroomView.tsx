@@ -7,25 +7,22 @@ interface Props {
   lesson: LessonData | null;
 }
 
-const ClassroomView: React.FC<Props> = ({ lesson }) => {
-  // 如果没有数据，显示提示而不是报错
-  if (!lesson || !lesson.lyrics) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-10">
-        <div className="bg-white p-10 rounded-3xl shadow-xl text-center">
-          <i className="fa-solid fa-circle-exclamation text-indigo-500 text-5xl mb-4"></i>
-          <h2 className="text-2xl font-black text-slate-800 mb-2">未找到课程数据</h2>
-          <p className="text-slate-400 mb-6">请返回编辑台并点击“保存课程”后再进入上课模式。</p>
-          <button 
-            onClick={() => window.location.hash = '#/teacher'}
-            className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold"
-          >
-            返回编辑台
-          </button>
-        </div>
-      </div>
-    );
-  }
+const ClassroomView: React.FC<Props> = ({ lesson: initialLesson }) => {
+  const [lesson, setLesson] = useState<LessonData | null>(initialLesson);
+  
+  // 恢复数据的逻辑，防止白屏
+  useEffect(() => {
+    if (!lesson) {
+      const saved = localStorage.getItem('activeLesson');
+      if (saved) {
+        try {
+          setLesson(JSON.parse(saved));
+        } catch (e) {
+          console.error("Failed to recover lesson data", e);
+        }
+      }
+    }
+  }, [lesson]);
 
   const [playing, setPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -40,6 +37,7 @@ const ClassroomView: React.FC<Props> = ({ lesson }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!lesson) return;
     const lyrics = lesson.lyrics || [];
     const active = lyrics.find(l => currentTime >= l.startTime && currentTime <= l.endTime);
     if (active && active.id !== currentLine?.id) {
@@ -57,7 +55,25 @@ const ClassroomView: React.FC<Props> = ({ lesson }) => {
       setSidePanel('questions');
       setPlaying(false);
     }
-  }, [currentTime, lesson.lyrics, lesson.questions]);
+  }, [currentTime, lesson, currentLine?.id, activeQuestion?.id]);
+
+  if (!lesson || !lesson.lyrics) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-10">
+        <div className="bg-white p-10 rounded-3xl shadow-xl text-center">
+          <i className="fa-solid fa-circle-notch fa-spin text-indigo-500 text-5xl mb-4"></i>
+          <h2 className="text-2xl font-black text-slate-800 mb-2">正在载入课程...</h2>
+          <p className="text-slate-400 mb-6">如果长时间无反应，请返回编辑台重新点击上课模式。</p>
+          <button 
+            onClick={() => window.location.hash = '#/teacher'}
+            className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold"
+          >
+            返回编辑台
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleNext = () => {
     const idx = lesson.lyrics.findIndex(l => l.id === currentLine?.id);
