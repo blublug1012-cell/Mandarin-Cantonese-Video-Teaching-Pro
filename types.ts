@@ -39,7 +39,7 @@ export interface LessonData {
 export interface Student {
   id: string;
   name: string;
-  assignedLessons: string[]; // List of lesson IDs
+  assignedLessons: string[];
 }
 
 export interface Database {

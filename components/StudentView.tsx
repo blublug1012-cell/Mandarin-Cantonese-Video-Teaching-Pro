@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import YouTubePlayer from './YouTubePlayer';
 import LyricLineDisplay from './LyricLineDisplay';
-import { LessonData, Database, Student } from '../types';
+import { LessonData, Database, Student, LyricLine } from '../types';
 
 interface Props {
   studentId: string;
@@ -19,167 +19,286 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 获取老师配置的云端地址
+  // 游戏逻辑相关状态
+  const [gameState, setGameState] = useState<'learning' | 'ordering' | 'finalChallenge' | 'completed'>('learning');
+  const [currentLineIdx, setCurrentLineIdx] = useState(0);
+  const [shuffledChars, setShuffledChars] = useState<string[]>([]);
+  const [userOrder, setUserOrder] = useState<string[]>([]);
+  const [score, setScore] = useState(0);
+  const [feedback, setFeedback] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
+  const [finalGaps, setFinalGaps] = useState<{lineId: string, vocabChar: string, options: string[], userChoice: string | null}[]>([]);
+
   const cloudBaseUrl = localStorage.getItem('teacher_cloud_url') || '';
 
   useEffect(() => {
     const found = db.students.find(s => s.id === studentId);
-    if (found) {
-      setStudent(found);
-    } else if (cloudBaseUrl) {
-      // 如果本地找不到学生，且有云端地址，则尝试自动同步
-      fetchCloudData();
-    }
+    if (found) setStudent(found);
+    else if (cloudBaseUrl) fetchCloudData();
   }, [studentId, db]);
 
   const fetchCloudData = async () => {
-    if (!cloudBaseUrl) {
-      setError("未找到课程同步源。请联系老师配置云端地址。");
-      return;
-    }
-
+    if (!cloudBaseUrl) return;
     setIsSyncing(true);
-    setError(null);
-
-    // 标准化 URL
     const baseUrl = cloudBaseUrl.endsWith('/') ? cloudBaseUrl : cloudBaseUrl + '/';
-    const targetUrl = `${baseUrl}${studentId}.json`;
-
     try {
-      const response = await fetch(targetUrl, { cache: 'no-store' });
-      if (!response.ok) throw new Error("无法从云端获取作业包。请确认老师已上传文件。");
-      
+      const response = await fetch(`${baseUrl}${studentId}.json`, { cache: 'no-store' });
+      if (!response.ok) throw new Error("Fetch failed");
       const imported = await response.json();
-      
-      // 合并逻辑
-      const mergedLessons = { ...db.lessons, ...imported.lessons };
-      let mergedStudents = [...db.students];
-      const impStudent = (imported.students || []).find((s: Student) => s.id === studentId);
-      
-      if (impStudent) {
-        const existingIdx = mergedStudents.findIndex(s => s.id === studentId);
-        if (existingIdx >= 0) {
-          mergedStudents[existingIdx] = {
-            ...mergedStudents[existingIdx],
-            assignedLessons: Array.from(new Set([...mergedStudents[existingIdx].assignedLessons, ...impStudent.assignedLessons]))
-          };
-        } else {
-          mergedStudents.push(impStudent);
-        }
-      }
-
-      const newDb = { lessons: mergedLessons, students: mergedStudents };
+      const newDb = { lessons: {...db.lessons, ...imported.lessons}, students: [...db.students, ...imported.students] };
       setDb(newDb);
       localStorage.setItem('teaching_db', JSON.stringify(newDb));
-      alert("✅ 课程同步成功！");
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "同步失败。");
-    } finally {
-      setIsSyncing(false);
+      setStudent(imported.students.find((s: any) => s.id === studentId));
+    } catch (err) { 
+      setError("同步云端数据失败，请确认 GitHub 仓库链接是否正确且文件已上传。");
+    } finally { 
+      setIsSyncing(false); 
     }
   };
 
-  if (isSyncing) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-20 h-20 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mb-8"></div>
-        <h2 className="text-2xl font-black text-slate-800 mb-2">正在同步课程数据...</h2>
-        <p className="text-slate-400 font-medium">请稍候，我们正在为您拉取最新的学习计划。</p>
-      </div>
-    );
-  }
+  // 排序挑战初始化
+  const startOrderingGame = (line: LyricLine) => {
+    const chars = Array.from(line.chinese.replace(/\s+/g, ''));
+    setShuffledChars([...chars].sort(() => Math.random() - 0.5));
+    setUserOrder([]);
+    setGameState('ordering');
+    setFeedback(null);
+  };
 
-  if (error && (!student || student.assignedLessons.length === 0)) {
+  // 验证排序结果
+  const checkOrder = (line: LyricLine) => {
+    const original = line.chinese.replace(/\s+/g, '');
+    const user = userOrder.join('');
+    if (user === original) {
+      setFeedback({ msg: '真棒！顺序完全正确 ✨', type: 'success' });
+      setScore(s => s + 10);
+      setTimeout(() => {
+        const nextIdx = currentLineIdx + 1;
+        const homeworkLines = activeLesson?.lyrics.filter(l => l.isHomework) || [];
+        if (nextIdx < homeworkLines.length) {
+          setCurrentLineIdx(nextIdx);
+          setGameState('learning');
+        } else {
+          setupFinalChallenge();
+        }
+      }, 1500);
+    } else {
+      setFeedback({ msg: `不对哦，正确顺序是：${original}`, type: 'error' });
+      setTimeout(() => {
+        setUserOrder([]);
+        setShuffledChars([...original.split('')].sort(() => Math.random() - 0.5));
+        setFeedback(null);
+      }, 2500);
+    }
+  };
+
+  // 设置终极填空大挑战
+  const setupFinalChallenge = () => {
+    const homeworkLines = activeLesson?.lyrics.filter(l => l.isHomework) || [];
+    const gaps: typeof finalGaps = [];
+    homeworkLines.forEach(l => {
+      if (l.vocabs.length > 0) {
+        // 每句随机选一个重点词作为空格
+        const v = l.vocabs[Math.floor(Math.random() * l.vocabs.length)];
+        const distractors = ['的', '了', '不', '是', '有', '在', '我', '你'];
+        const randomDistractor = distractors[Math.floor(Math.random()*distractors.length)];
+        gaps.push({
+          lineId: l.id,
+          vocabChar: v.char,
+          options: [v.char, randomDistractor].sort(() => Math.random() - 0.5),
+          userChoice: null
+        });
+      }
+    });
+    setFinalGaps(gaps);
+    setGameState('finalChallenge');
+  };
+
+  const handleFinalChoice = (idx: number, choice: string) => {
+    const newGaps = [...finalGaps];
+    if (newGaps[idx].userChoice) return; // 不可修改
+    newGaps[idx].userChoice = choice;
+    setFinalGaps(newGaps);
+    if (choice === newGaps[idx].vocabChar) setScore(s => s + 5);
+  };
+
+  if (isSyncing) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-indigo-600 font-black text-xl animate-pulse">正在从 GitHub 云端同步课件...</div>;
+
+  if (!activeLesson) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-[3rem] p-12 max-w-md w-full shadow-2xl text-center space-y-6">
-          <div className="w-20 h-20 bg-red-50 text-red-400 rounded-full flex items-center justify-center mx-auto mb-4">
-             <i className="fa-solid fa-cloud-bolt text-3xl"></i>
+      <div className="min-h-screen bg-slate-50 p-12">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex justify-between items-center mb-12">
+            <h1 className="text-4xl font-black text-slate-900">你好, {student?.name || '同学'}! 👋</h1>
+            <button onClick={fetchCloudData} className="bg-white border-2 border-indigo-100 text-indigo-600 px-6 py-2 rounded-2xl font-black text-sm shadow-sm hover:bg-indigo-50 transition-all">同步云端</button>
           </div>
-          <h2 className="text-2xl font-black text-slate-800">同步出错</h2>
-          <p className="text-slate-400 font-medium leading-relaxed">{error}</p>
-          <button onClick={fetchCloudData} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-indigo-700 transition-all">
-             重试同步
-          </button>
+          {error && <div className="bg-red-50 text-red-500 p-6 rounded-3xl mb-8 font-bold border-2 border-red-100">{error}</div>}
+          <div className="grid grid-cols-2 gap-8">
+            {student?.assignedLessons.map(id => (
+              <div key={id} onClick={() => {
+                setActiveLesson(db.lessons[id]);
+                setCurrentLineIdx(0);
+                setGameState('learning');
+                setScore(0);
+              }} className="bg-white p-10 rounded-[3rem] shadow-xl shadow-slate-200 border-4 border-transparent hover:border-indigo-400 cursor-pointer transition-all hover:-translate-y-2">
+                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-6">
+                  <i className="fa-solid fa-play"></i>
+                </div>
+                <h3 className="text-2xl font-black text-slate-800 leading-tight">{db.lessons[id]?.title}</h3>
+                <p className="text-indigo-400 font-black mt-4 uppercase tracking-widest text-[10px]">点击进入复习练习</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!student || student.assignedLessons.length === 0) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-[3rem] p-12 max-w-md w-full shadow-2xl text-center space-y-6">
-          <div className="w-20 h-20 bg-indigo-50 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-4">
-             <i className="fa-solid fa-user-clock text-3xl"></i>
-          </div>
-          <h2 className="text-2xl font-black text-slate-800">暂无课程</h2>
-          <p className="text-slate-400 font-medium leading-relaxed">老师尚未为您指派作业，或者云端文件尚未就绪。</p>
-          <button onClick={fetchCloudData} className="w-full bg-slate-100 text-slate-500 py-4 rounded-2xl font-black hover:bg-slate-200 transition-all">
-             刷新同步状态
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const homeworkLines = activeLesson.lyrics.filter(l => l.isHomework);
+  const currentLine = homeworkLines[currentLineIdx];
 
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-6 font-sans">
-       <div className="max-w-4xl mx-auto">
-          <header className="mb-12 flex justify-between items-end border-b pb-8">
-             <div>
-                <h1 className="text-4xl font-black text-slate-900 mb-2 tracking-tight">你好, {student.name}! 👋</h1>
-                <p className="text-slate-500 font-bold">你有 {student.assignedLessons.length} 节课可供复习。</p>
-             </div>
-             <button onClick={fetchCloudData} className="bg-white border-2 border-slate-100 text-slate-400 px-6 py-3 rounded-2xl font-black text-xs hover:text-indigo-600 hover:border-indigo-100 transition-all flex items-center gap-2">
-                <i className="fa-solid fa-sync"></i> 检查新课件
-             </button>
-          </header>
+    <div className="min-h-screen bg-indigo-600 p-8 font-sans text-white overflow-x-hidden">
+      <div className="max-w-5xl mx-auto">
+        <header className="flex justify-between items-center mb-12">
+           <button onClick={() => setActiveLesson(null)} className="bg-white/10 hover:bg-white/20 px-8 py-3 rounded-2xl font-black transition-all">退出</button>
+           <div className="text-right">
+             <p className="text-indigo-200 font-black uppercase tracking-widest text-[10px] mb-1">当前积分 SCORE</p>
+             <p className="text-5xl font-black tabular-nums">{score}</p>
+           </div>
+        </header>
 
-          {activeLesson ? (
-             <div className="space-y-8 animate-in fade-in zoom-in duration-500">
-                <button onClick={() => setActiveLesson(null)} className="bg-white border-2 border-slate-100 px-8 py-3 rounded-2xl font-black text-slate-500 hover:bg-slate-100 transition-all flex items-center gap-2 shadow-sm">
-                  <i className="fa-solid fa-arrow-left"></i> 返回列表
-                </button>
-                <div className="bg-white p-12 rounded-[3.5rem] shadow-xl border-4 border-white">
-                   <h2 className="text-4xl font-black text-slate-800 mb-10 text-center tracking-tight">{activeLesson.title}</h2>
-                   <div className="max-w-2xl mx-auto rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-slate-50 mb-12">
-                      <YouTubePlayer url={activeLesson.videoUrl} playing={false} playbackRate={1} onProgress={() => {}} />
-                   </div>
-                   <div className="space-y-16 mt-20">
-                      {activeLesson.lyrics.filter(l => l.isHomework).map((line, idx) => (
-                         <div key={line.id} className="pb-12 border-b-2 border-slate-50 last:border-0">
-                            <LyricLineDisplay line={line} />
-                         </div>
-                      ))}
-                   </div>
-                </div>
+        {gameState === 'learning' && currentLine && (
+          <div className="space-y-12 animate-in fade-in zoom-in duration-500">
+            <div className="bg-black rounded-[3rem] overflow-hidden shadow-2xl border-8 border-white/10 aspect-video max-w-3xl mx-auto">
+              <YouTubePlayer url={activeLesson.videoUrl} playing={true} playbackRate={1} onProgress={() => {}} seekTo={currentLine.startTime} />
+            </div>
+            <div className="bg-white text-slate-800 p-12 rounded-[4rem] shadow-2xl relative">
+              <div className="absolute top-[-1.5rem] left-1/2 -translate-x-1/2 bg-yellow-400 text-black px-10 py-3 rounded-full font-black shadow-xl text-sm uppercase tracking-widest">第一步：仔细听、跟着读</div>
+              <LyricLineDisplay line={currentLine} />
+              <button 
+                onClick={() => startOrderingGame(currentLine)}
+                className="w-full mt-12 bg-indigo-600 text-white py-7 rounded-[2rem] font-black text-2xl shadow-xl hover:scale-105 active:scale-95 transition-all shadow-indigo-900/20"
+              >
+                学完了，开始句序挑战！
+              </button>
+            </div>
+          </div>
+        )}
+
+        {gameState === 'ordering' && currentLine && (
+          <div className="space-y-12 animate-in slide-in-from-right duration-500">
+             <div className="text-center">
+               <h2 className="text-5xl font-black mb-4">挑战：语序还原</h2>
+               <p className="text-indigo-200 text-xl font-bold italic opacity-80">点击下方汉字，拼出刚才学过的那句话</p>
              </div>
-          ) : (
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {student.assignedLessons.slice().reverse().map(lessonId => {
-                   const lesson = db.lessons[lessonId];
-                   if (!lesson) return null;
-                   return (
-                      <div key={lessonId} onClick={() => setActiveLesson(lesson)} className="bg-white p-10 rounded-[3rem] shadow-md border-2 border-transparent hover:border-indigo-400 cursor-pointer transition-all group hover:-translate-y-2 hover:shadow-2xl">
-                         <div className="flex justify-between items-start mb-10">
-                            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-500 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
-                               <i className="fa-solid fa-play text-xl"></i>
-                            </div>
-                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-full group-hover:bg-indigo-50 group-hover:text-indigo-400">复习回顾</span>
-                         </div>
-                         <h3 className="text-2xl font-black text-slate-800 mb-6 leading-tight group-hover:text-indigo-600">{lesson.title}</h3>
-                         <div className="flex items-center gap-2 text-indigo-400 font-black text-xs uppercase tracking-widest">
-                            <span>开始学习</span>
-                            <i className="fa-solid fa-arrow-right-long transition-transform group-hover:translate-x-2"></i>
-                         </div>
+
+             <div className="bg-white/10 border-4 border-dashed border-white/20 p-12 rounded-[4rem] min-h-[200px] flex flex-wrap justify-center items-center gap-4">
+                {userOrder.length === 0 && <p className="text-indigo-200 font-black text-2xl opacity-20 italic">点击字块填入这里...</p>}
+                {userOrder.map((c, i) => (
+                  <button key={i} onClick={() => {
+                    setUserOrder(userOrder.filter((_, idx) => idx !== i));
+                    setShuffledChars([...shuffledChars, c]);
+                  }} className="w-20 h-24 bg-white text-indigo-900 rounded-2xl text-5xl font-black shadow-xl flex items-center justify-center animate-in zoom-in hover:bg-red-50 hover:text-red-500 transition-colors">
+                    {c}
+                  </button>
+                ))}
+             </div>
+
+             <div className="flex flex-wrap justify-center gap-4">
+                {shuffledChars.map((c, i) => (
+                  <button key={i} onClick={() => {
+                    setUserOrder([...userOrder, c]);
+                    setShuffledChars(shuffledChars.filter((_, idx) => idx !== i));
+                  }} className="w-16 h-20 bg-indigo-400 hover:bg-white hover:text-indigo-900 text-white rounded-2xl text-4xl font-black shadow-lg transition-all flex items-center justify-center active:scale-90">
+                    {c}
+                  </button>
+                ))}
+             </div>
+
+             {feedback && (
+               <div className={`p-8 rounded-3xl text-center text-3xl font-black animate-bounce shadow-2xl ${feedback.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                 {feedback.msg}
+               </div>
+             )}
+
+             <div className="flex gap-6 max-w-2xl mx-auto">
+                <button onClick={() => { setUserOrder([]); setShuffledChars([...currentLine.chinese.replace(/\s+/g,'')].sort(() => Math.random()-0.5)) }} className="flex-1 py-6 bg-white/10 rounded-3xl font-black hover:bg-white/20 transition-all">清空重来</button>
+                <button onClick={() => checkOrder(currentLine)} disabled={shuffledChars.length > 0} className={`flex-[2] py-6 rounded-3xl font-black text-2xl shadow-2xl transition-all ${shuffledChars.length > 0 ? 'bg-white/20 cursor-not-allowed opacity-50' : 'bg-yellow-400 text-black hover:scale-105 active:scale-95'}`}>确认提交</button>
+             </div>
+          </div>
+        )}
+
+        {gameState === 'finalChallenge' && (
+          <div className="space-y-12 animate-in slide-in-from-bottom duration-700">
+             <div className="text-center">
+                <h2 className="text-6xl font-black mb-4 tracking-tighter">终极填空大挑战</h2>
+                <p className="text-indigo-200 text-xl font-bold opacity-80">回顾整段视频内容，为缺失的台词选择正确的词语</p>
+             </div>
+             
+             <div className="bg-white p-14 rounded-[4rem] text-slate-800 space-y-14 shadow-2xl">
+                {homeworkLines.map((line, lIdx) => {
+                  const gap = finalGaps.find(g => g.lineId === line.id);
+                  if (!gap) return null;
+                  
+                  return (
+                    <div key={line.id} className="pb-10 border-b-4 border-slate-50 last:border-0">
+                      <div className="flex flex-wrap items-center gap-x-6 gap-y-10 text-5xl font-black leading-tight">
+                         {Array.from(line.chinese.replace(/\s+/g,'')).map((c, ci) => {
+                           if (c === gap.vocabChar) {
+                             return (
+                               <div key={ci} className="relative inline-flex flex-col">
+                                 {gap.userChoice ? (
+                                   <span className={`pb-2 border-b-4 ${gap.userChoice === gap.vocabChar ? 'text-indigo-600 border-indigo-600' : 'text-red-500 border-red-500 animate-pulse'}`}>
+                                     {gap.userChoice}
+                                   </span>
+                                 ) : (
+                                   <div className="flex gap-3 bg-slate-50 p-2 rounded-2xl shadow-inner border border-slate-100">
+                                     {gap.options.map(opt => (
+                                       <button key={opt} onClick={() => handleFinalChoice(finalGaps.indexOf(gap), opt)} className="bg-white hover:bg-indigo-600 hover:text-white px-5 py-3 rounded-xl text-2xl transition-all border-2 border-slate-100 hover:border-indigo-600 shadow-sm">
+                                         {opt}
+                                       </button>
+                                     ))}
+                                   </div>
+                                 )}
+                               </div>
+                             );
+                           }
+                           return <span key={ci} className="text-slate-300 opacity-60">{c}</span>;
+                         })}
                       </div>
-                   );
+                      <p className="text-xl italic text-slate-400 mt-6 font-medium">"{line.english}"</p>
+                    </div>
+                  );
                 })}
+
+                <button 
+                  onClick={() => setGameState('completed')}
+                  disabled={finalGaps.some(g => !g.userChoice)}
+                  className={`w-full py-8 rounded-[2rem] font-black text-3xl shadow-2xl transition-all ${finalGaps.some(g => !g.userChoice) ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-indigo-600 text-white hover:scale-105 active:scale-95'}`}
+                >
+                  查看最终评分
+                </button>
              </div>
-          )}
-       </div>
+          </div>
+        )}
+
+        {gameState === 'completed' && (
+           <div className="text-center space-y-12 py-20 animate-in zoom-in duration-500">
+              <div className="w-56 h-56 bg-yellow-400 rounded-full flex items-center justify-center mx-auto shadow-[0_20px_60px_-15px_rgba(250,204,21,0.5)] ring-8 ring-white/20 animate-bounce">
+                 <i className="fa-solid fa-trophy text-9xl text-black"></i>
+              </div>
+              <div className="space-y-4">
+                <h2 className="text-7xl font-black tracking-tighter">太牛了！复习完成</h2>
+                <p className="text-2xl text-indigo-200 font-bold opacity-80 italic">恭喜你！今天也向着母语者的水平迈进了一大步。</p>
+              </div>
+              <div className="bg-white/10 p-14 rounded-[4rem] inline-block border-4 border-white/20 shadow-2xl backdrop-blur-sm">
+                <p className="text-[12px] font-black uppercase tracking-[0.3em] text-indigo-200 mb-4 opacity-70">本次练习得分 FINAL SCORE</p>
+                <p className="text-9xl font-black tabular-nums">{score}</p>
+              </div>
+              <button onClick={() => setActiveLesson(null)} className="block mx-auto bg-white text-indigo-600 px-16 py-6 rounded-[2rem] font-black text-3xl shadow-2xl hover:scale-110 active:scale-95 transition-all">返回课程列表</button>
+           </div>
+        )}
+      </div>
     </div>
   );
 };
