@@ -17,14 +17,21 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
+
       if (hash.startsWith('#/student/')) {
         const id = hash.replace('#/student/', '');
         setStudentId(id);
         setView('student');
       } else if (hash === '#/classroom') {
-        setView('classroom');
+        const saved = localStorage.getItem('activeLesson');
+        if (saved) {
+          setActiveLesson(JSON.parse(saved));
+          setView('classroom');
+        } else {
+          window.location.hash = '#/teacher';
+        }
       } else if (hash === '#/teacher') {
-        // Will check passcode
+        setView('teacher');
       } else {
         setView('landing');
       }
@@ -39,63 +46,50 @@ const App: React.FC = () => {
     e.preventDefault();
     if (passcode === TEACHER_CODE) {
       window.location.hash = '#/teacher';
-      setView('teacher');
     } else {
       setError('错误验证码');
     }
   };
 
   const loadLessonForClass = (lesson: LessonData) => {
+    localStorage.setItem('activeLesson', JSON.stringify(lesson));
     setActiveLesson(lesson);
     window.location.hash = '#/classroom';
-    setView('classroom');
   };
 
   return (
     <div className="min-h-screen">
       {view === 'landing' && (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-500 to-indigo-600 p-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full text-center">
-            <div className="mb-6">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <i className="fa-solid fa-chalkboard-user text-3xl text-blue-600"></i>
+        <div className="flex items-center justify-center min-h-screen bg-slate-100 p-4">
+          <div className="bg-white rounded-3xl shadow-xl p-10 max-w-md w-full text-center border-4 border-white">
+            <div className="mb-8">
+              <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-600">
+                <i className="fa-solid fa-graduation-cap text-3xl"></i>
               </div>
-              <h1 className="text-2xl font-bold text-gray-800">对外汉语教学工具</h1>
-              <p className="text-gray-500 mt-2">请登录或进入学生作业页面</p>
+              <h1 className="text-2xl font-black text-slate-800 tracking-tight">1on1 语言教学系统</h1>
+              <p className="text-slate-400 text-sm mt-2 font-medium">老师请登录，学生请点击您的专属链接</p>
             </div>
             
             <form onSubmit={handleTeacherLogin} className="space-y-4">
               <input 
                 type="password" 
-                placeholder="输入教师验证码 (2110)" 
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                placeholder="教师访问码" 
+                className="w-full px-5 py-3 rounded-xl border-2 border-slate-100 focus:outline-none focus:border-indigo-400 text-center text-lg tracking-widest font-black"
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
               />
-              {error && <p className="text-red-500 text-sm">{error}</p>}
-              <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg">
-                教师登录
+              {error && <p className="text-red-500 text-sm font-bold">{error}</p>}
+              <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95">
+                进入管理后台
               </button>
             </form>
-            
-            <div className="mt-8 pt-6 border-t border-gray-100">
-              <p className="text-sm text-gray-400">学生请点击老师发送的专属链接进入</p>
-            </div>
           </div>
         </div>
       )}
 
-      {view === 'teacher' && (
-        <TeacherEditor onOpenClassroom={loadLessonForClass} />
-      )}
-
-      {view === 'classroom' && (
-        <ClassroomView lesson={activeLesson} />
-      )}
-
-      {view === 'student' && studentId && (
-        <StudentView studentId={studentId} />
-      )}
+      {view === 'teacher' && <TeacherEditor onOpenClassroom={loadLessonForClass} />}
+      {view === 'classroom' && <ClassroomView lesson={activeLesson} />}
+      {view === 'student' && studentId && <StudentView studentId={studentId} />}
     </div>
   );
 };

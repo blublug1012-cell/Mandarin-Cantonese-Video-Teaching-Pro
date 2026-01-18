@@ -15,7 +15,7 @@ export interface LyricLine {
   pinyin: string;
   english: string;
   vocabs: Vocab[];
-  isHomework: boolean; // Added to select specific lines for homework
+  isHomework: boolean;
 }
 
 export interface Question {
@@ -33,12 +33,16 @@ export interface LessonData {
   language: Language;
   lyrics: LyricLine[];
   questions: Question[];
+  lastModified: number;
 }
 
-export interface StudentResult {
-  studentId: string;
-  lessonId: string;
-  score: number;
-  completed: boolean;
-  timestamp: string;
+export interface Student {
+  id: string;
+  name: string;
+  assignedLessons: string[]; // List of lesson IDs
+}
+
+export interface Database {
+  lessons: Record<string, LessonData>;
+  students: Student[];
 }

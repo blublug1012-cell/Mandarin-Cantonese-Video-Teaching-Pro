@@ -10,12 +10,22 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600&display=swap');
         body { font-family: 'Noto Sans SC', sans-serif; }
-        .pinyin { font-family: 'Arial', sans-serif; font-size: 0.75rem; line-height: 1; }
+        .pinyin-box { font-family: 'Arial', sans-serif; font-size: 0.85rem; line-height: 1; text-transform: lowercase; height: 1.2em; color: #94a3b8; font-weight: bold; }
+        
         @media print {
-            .no-print { display: none !important; }
-            .print-only { display: block !important; }
+            header, nav, button, .no-print, .video-controls, .editor-controls { display: none !important; }
+            body { background: white !important; padding: 0 !important; color: black !important; }
+            .print-container { display: block !important; padding: 2rem !important; }
+            .lyric-item { 
+                page-break-inside: avoid; 
+                border: none !important; 
+                border-bottom: 1px solid #eee !important;
+                margin-bottom: 2rem !important;
+                padding-bottom: 1rem !important;
+            }
+            .main-content-wrapper { margin: 0 !important; max-width: 100% !important; }
+            #root { background: white !important; }
         }
-        .print-only { display: none; }
     </style>
 <script type="importmap">
 {
@@ -31,7 +41,6 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-    <!-- Vite 会自动处理这里的 index.tsx -->
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>

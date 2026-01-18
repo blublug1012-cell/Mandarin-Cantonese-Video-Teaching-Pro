@@ -1,370 +1,300 @@
 
-import React, { useState, useEffect } from 'react';
-import { LessonData, LyricLine, Question, Language, Vocab, StudentResult } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { LessonData, LyricLine, Vocab, Database, Student } from '../types';
 
 interface Props {
   onOpenClassroom: (lesson: LessonData) => void;
 }
 
 const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
+  const [db, setDb] = useState<Database>(() => {
+    const saved = localStorage.getItem('teaching_db');
+    return saved ? JSON.parse(saved) : { lessons: {}, students: [] };
+  });
+
+  // 新增：云端数据源配置
+  const [cloudBaseUrl, setCloudBaseUrl] = useState(() => {
+    return localStorage.getItem('teacher_cloud_url') || '';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('teacher_cloud_url', cloudBaseUrl);
+  }, [cloudBaseUrl]);
+
   const [lesson, setLesson] = useState<LessonData>(() => {
-    const saved = localStorage.getItem('currentLesson');
-    return saved ? JSON.parse(saved) : {
+    const savedId = localStorage.getItem('last_lesson_id');
+    if (savedId && db.lessons[savedId]) return db.lessons[savedId];
+    return {
       id: Date.now().toString(),
-      title: '我的中文课',
-      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      title: '新课程',
+      videoUrl: '',
       language: 'Mandarin',
       lyrics: [],
-      questions: []
+      questions: [],
+      lastModified: Date.now()
     };
   });
 
-  const [activeTab, setActiveTab] = useState<'info' | 'lyrics' | 'questions' | 'students'>('info');
-  const [mockResults, setMockResults] = useState<StudentResult[]>([]);
+  const [activeTab, setActiveTab] = useState<'info' | 'lyrics' | 'questions' | 'students'>('lyrics');
+  const [batchText, setBatchText] = useState('');
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    localStorage.setItem('currentLesson', JSON.stringify(lesson));
-  }, [lesson]);
+  const saveToDb = (updatedLesson: LessonData) => {
+    const newDb = { ...db, lessons: { ...db.lessons, [updatedLesson.id]: updatedLesson } };
+    setDb(newDb);
+    localStorage.setItem('teaching_db', JSON.stringify(newDb));
+    localStorage.setItem('last_lesson_id', updatedLesson.id);
+  };
 
-  const addLyricLine = () => {
-    const lastLine = lesson.lyrics[lesson.lyrics.length - 1];
-    const newLine: LyricLine = {
-      id: Math.random().toString(36).substr(2, 9),
-      startTime: lastLine ? lastLine.endTime : 0,
-      endTime: lastLine ? lastLine.endTime + 5 : 5,
-      chinese: '',
-      pinyin: '',
-      english: '',
-      vocabs: [],
-      isHomework: true
+  const handleManualSave = () => {
+    saveToDb(lesson);
+    alert('✅ 保存成功！');
+  };
+
+  const exportStudentPackage = (studentId: string) => {
+    const student = db.students.find(s => s.id === studentId);
+    if (!student) return;
+
+    const filteredLessons: Record<string, LessonData> = {};
+    student.assignedLessons.forEach(id => {
+      if (db.lessons[id]) filteredLessons[id] = db.lessons[id];
+    });
+
+    const pkg = { lessons: filteredLessons, students: [student] };
+    // 文件名与 studentId 绑定，方便老师直接丢进 public 文件夹
+    downloadJson(JSON.stringify(pkg, null, 2), `${studentId}.json`);
+    alert(`已生成 ${studentId}.json。请将其上传到您的公共文件夹中。`);
+  };
+
+  const downloadJson = (content: string, fileName: string) => {
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const imported = JSON.parse(e.target?.result as string);
+        setDb(imported);
+        localStorage.setItem('teaching_db', JSON.stringify(imported));
+        alert("数据库导入成功！");
+        window.location.reload();
+      } catch (err) { alert("格式错误。"); }
     };
-    setLesson({ ...lesson, lyrics: [...lesson.lyrics, newLine] });
+    reader.readAsText(file);
   };
 
-  const updateLyric = (id: string, field: keyof LyricLine, value: any) => {
+  const addVocab = (lineId: string) => {
     setLesson({
       ...lesson,
-      lyrics: lesson.lyrics.map(l => l.id === id ? { ...l, [field]: value } : l)
+      lyrics: lesson.lyrics.map(l => l.id === lineId ? {
+        ...l,
+        vocabs: [...l.vocabs, { char: '', pinyin: '', explanation: '' }]
+      } : l)
     });
   };
 
-  const addQuestion = () => {
-    const newQ: Question = {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: 0,
-      question: '这是一个什么问题？',
-      options: ['选项A', '选项B', '选项C', '选项D'],
-      correctIndex: 0
-    };
-    setLesson({ ...lesson, questions: [...lesson.questions, newQ] });
-  };
-
-  const updateQuestion = (id: string, field: keyof Question, value: any) => {
+  const updateVocab = (lineId: string, vIdx: number, field: keyof Vocab, val: string) => {
     setLesson({
       ...lesson,
-      questions: lesson.questions.map(q => q.id === id ? { ...q, [field]: value } : q)
+      lyrics: lesson.lyrics.map(l => l.id === lineId ? {
+        ...l,
+        vocabs: l.vocabs.map((v, i) => i === vIdx ? { ...v, [field]: val } : v)
+      } : l)
     });
   };
 
-  const addVocabToLine = (lyricId: string) => {
-    const char = prompt("输入要解释的汉字 (e.g. 老师):");
-    if (!char) return;
-    const pinyin = prompt("输入拼音/粤拼 (e.g. lǎo shī):");
-    const explanation = prompt("输入解释 (e.g. teacher):");
-    
-    setLesson({
-      ...lesson,
-      lyrics: lesson.lyrics.map(l => {
-        if (l.id === lyricId) {
-          return { ...l, vocabs: [...l.vocabs, { char, pinyin: pinyin || '', explanation: explanation || '' }] };
-        }
-        return l;
-      })
-    });
+  const addStudent = () => {
+    const name = prompt("学生姓名 (如: John):");
+    if (!name) return;
+    // 强制使用简单的 ID 格式，方便作为文件名
+    const studentId = name.toLowerCase().replace(/\s+/g, '_') + '_' + Math.floor(Math.random() * 90 + 10);
+    const newStudent: Student = { id: studentId, name, assignedLessons: [] };
+    const newDb = { ...db, students: [...db.students, newStudent] };
+    setDb(newDb);
+    localStorage.setItem('teaching_db', JSON.stringify(newDb));
   };
 
-  const exportJSON = (studentId?: string) => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(lesson, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", studentId ? `${studentId}_homework.json` : `lesson_config.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+  const assignToStudent = (studentId: string) => {
+    const newDb = { ...db };
+    const s = newDb.students.find(item => item.id === studentId);
+    if (s && !s.assignedLessons.includes(lesson.id)) {
+      s.assignedLessons.push(lesson.id);
+      setDb({ ...newDb });
+      localStorage.setItem('teaching_db', JSON.stringify(newDb));
+      alert(`已指派课程《${lesson.title}》给 ${s.name}`);
+    }
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen pb-20">
+    <div className="bg-slate-50 min-h-screen pb-20 no-print font-sans">
       <header className="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
-        <h2 className="text-xl font-bold flex items-center gap-3 text-indigo-600">
-          <div className="bg-indigo-100 p-2 rounded-xl">
-            <i className="fa-solid fa-wand-magic-sparkles"></i>
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
+             <i className="fa-solid fa-chalkboard-user"></i>
           </div>
-          教师课程管理系统
-        </h2>
+          <h1 className="font-bold text-slate-800">Mandarin Pro Editor</h1>
+        </div>
         <div className="flex gap-3">
-          <button 
-            onClick={() => onOpenClassroom(lesson)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all shadow-md active:scale-95"
-          >
-            <i className="fa-solid fa-chalkboard"></i> 进入上课模式
+          <button onClick={() => fileInputRef.current?.click()} className="bg-slate-100 border border-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-xs hover:bg-slate-200">全量导入</button>
+          <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".json" />
+          <button onClick={() => downloadJson(JSON.stringify(db), 'full_backup.json')} className="bg-slate-100 border border-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-xs hover:bg-slate-200">全量导出</button>
+          <button onClick={handleManualSave} className="bg-emerald-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-600 text-sm">
+            <i className="fa-solid fa-save"></i> 保存
           </button>
-          <button 
-            onClick={() => window.print()}
-            className="bg-white border-2 border-slate-200 hover:border-indigo-200 hover:text-indigo-600 px-5 py-2.5 rounded-xl font-bold transition-all"
-          >
-            <i className="fa-solid fa-file-pdf mr-1"></i> 导出PDF讲义
+          <button onClick={() => onOpenClassroom(lesson)} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 text-sm">
+            <i className="fa-solid fa-play"></i> 上课模式
           </button>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto mt-8 px-6">
-        <nav className="flex gap-2 mb-8 bg-slate-200/50 p-1.5 rounded-2xl w-fit mx-auto">
+      <main className="max-w-5xl mx-auto mt-8 px-6">
+        <nav className="flex gap-2 mb-8 justify-center bg-white p-2 rounded-3xl shadow-sm border border-slate-100 w-fit mx-auto">
           {(['info', 'lyrics', 'questions', 'students'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-8 py-2.5 rounded-xl font-bold transition-all ${activeTab === tab ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              {tab === 'info' && '1. 课堂信息'}
-              {tab === 'lyrics' && '2. 歌词与作业选择'}
-              {tab === 'questions' && '3. 视频互动题'}
-              {tab === 'students' && '4. 布置作业'}
+            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-8 py-3 rounded-2xl font-bold text-sm transition-all ${activeTab === tab ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+              {tab === 'info' && '1. 课程设置'}
+              {tab === 'lyrics' && '2. 内容编辑'}
+              {tab === 'questions' && '3. 互动习题'}
+              {tab === 'students' && '4. 学生管理'}
             </button>
           ))}
         </nav>
 
-        <div className="bg-white rounded-[2rem] p-10 shadow-xl shadow-slate-200/50 border border-slate-100 min-h-[600px]">
-          {activeTab === 'info' && (
-            <div className="space-y-8 animate-in fade-in duration-500">
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-500 ml-1">课程标题</label>
-                  <input 
-                    type="text" 
-                    className="w-full px-5 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-400 focus:bg-white focus:outline-none transition-all text-lg font-bold"
-                    value={lesson.title}
-                    onChange={(e) => setLesson({...lesson, title: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-500 ml-1">教学语言</label>
-                  <div className="flex gap-4">
-                    {['Mandarin', 'Cantonese'].map(lang => (
-                      <button
-                        key={lang}
-                        onClick={() => setLesson({...lesson, language: lang as Language})}
-                        className={`flex-1 py-4 rounded-2xl font-bold border-2 transition-all ${lesson.language === lang ? 'bg-indigo-50 border-indigo-500 text-indigo-600' : 'bg-slate-50 border-transparent text-slate-400 hover:bg-slate-100'}`}
-                      >
-                        {lang === 'Mandarin' ? '普通话' : '粤语'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-500 ml-1">YouTube 视频 ID 或完整链接</label>
-                <div className="relative">
-                  <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400">
-                    <i className="fa-brands fa-youtube text-xl"></i>
-                  </div>
-                  <input 
-                    type="text" 
-                    placeholder="例如: dQw4w9WgXcQ"
-                    className="w-full pl-14 pr-5 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-400 focus:bg-white focus:outline-none transition-all"
-                    value={lesson.videoUrl}
-                    onChange={(e) => setLesson({...lesson, videoUrl: e.target.value})}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
+        <div className="bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 min-h-[60vh]">
           {activeTab === 'lyrics' && (
-            <div className="space-y-6 animate-in slide-in-from-right duration-500">
-              <div className="flex justify-between items-center bg-indigo-50 p-4 rounded-2xl border border-indigo-100 mb-6">
-                <p className="text-sm text-indigo-600 font-bold"><i className="fa-solid fa-info-circle mr-2"></i>勾选 "布置作业" 即可将该行加入学生的练习内容。</p>
+            <div className="space-y-12">
+              <div className="bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100 flex items-center gap-4">
+                <i className="fa-solid fa-pencil text-indigo-500"></i>
+                <p className="text-indigo-600 text-sm font-medium">在此编辑视频句段和拼音。</p>
+                <button onClick={() => setShowBatchModal(true)} className="ml-auto bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold">批量导入文本</button>
               </div>
-              {lesson.lyrics.map((line, idx) => (
-                <div key={line.id} className="group p-8 rounded-[2rem] bg-slate-50 hover:bg-white hover:shadow-lg border-2 border-transparent hover:border-indigo-100 transition-all relative">
-                  <div className="flex gap-8">
-                    <div className="w-32 space-y-4 pt-1 flex flex-col items-center">
-                      <div className="text-center font-bold text-indigo-300 text-3xl mb-2 italic">#{idx+1}</div>
-                      <div className="flex flex-col gap-2 w-full">
-                        <input 
-                          type="number" step="0.1"
-                          className="w-full px-2 py-1.5 rounded-lg border text-center text-xs font-bold"
-                          value={line.startTime}
-                          onChange={(e) => updateLyric(line.id, 'startTime', parseFloat(e.target.value))}
-                        />
-                        <input 
-                          type="number" step="0.1"
-                          className="w-full px-2 py-1.5 rounded-lg border text-center text-xs font-bold"
-                          value={line.endTime}
-                          onChange={(e) => updateLyric(line.id, 'endTime', parseFloat(e.target.value))}
-                        />
-                      </div>
-                      <div className="mt-4 flex flex-col items-center gap-1">
-                        <span className="text-[10px] font-black text-slate-400 uppercase">布置作业</span>
-                        <button 
-                          onClick={() => updateLyric(line.id, 'isHomework', !line.isHomework)}
-                          className={`w-12 h-6 rounded-full relative transition-all ${line.isHomework ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                        >
-                          <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${line.isHomework ? 'left-7' : 'left-1'}`}></div>
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex-1 space-y-4">
-                      <input 
-                        type="text" placeholder="输入中文字幕..."
-                        className="w-full text-2xl font-bold bg-transparent border-b-2 border-slate-200 focus:border-indigo-500 focus:outline-none py-2"
-                        value={line.chinese}
-                        onChange={(e) => updateLyric(line.id, 'chinese', e.target.value)}
-                      />
-                      <input 
-                        type="text" placeholder="拼音对照 (对应每个字，空格分隔)"
-                        className="w-full text-lg font-medium text-slate-400 bg-transparent border-b-2 border-slate-100 focus:border-indigo-300 focus:outline-none py-1"
-                        value={line.pinyin}
-                        onChange={(e) => updateLyric(line.id, 'pinyin', e.target.value)}
-                      />
-                      <input 
-                        type="text" placeholder="英文翻译..."
-                        className="w-full text-slate-400 italic bg-transparent focus:outline-none"
-                        value={line.english}
-                        onChange={(e) => updateLyric(line.id, 'english', e.target.value)}
-                      />
-                      <div className="pt-4 flex flex-wrap gap-2">
-                        {line.vocabs.map((v, vIdx) => (
-                          <div key={vIdx} className="bg-indigo-100 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 group/v">
-                            {v.char} <span className="opacity-50 font-normal">({v.pinyin})</span>
-                            <button onClick={() => {
-                              updateLyric(line.id, 'vocabs', line.vocabs.filter((_, i) => i !== vIdx));
-                            }} className="hover:text-red-500"><i className="fa-solid fa-circle-xmark"></i></button>
-                          </div>
-                        ))}
-                        <button 
-                          onClick={() => addVocabToLine(line.id)}
-                          className="px-4 py-1.5 rounded-full text-sm font-bold border-2 border-dashed border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500 transition-all"
-                        >
-                          + 添加单词解释
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setLesson({...lesson, lyrics: lesson.lyrics.filter(l => l.id !== line.id)})}
-                    className="absolute -right-3 -top-3 w-10 h-10 bg-white shadow-lg text-red-500 rounded-full flex items-center justify-center border hover:bg-red-50 transition-all scale-0 group-hover:scale-100"
-                  >
-                    <i className="fa-solid fa-trash-can"></i>
-                  </button>
-                </div>
-              ))}
-              <button 
-                onClick={addLyricLine}
-                className="w-full py-10 border-4 border-dashed border-slate-100 rounded-[2rem] text-slate-300 hover:text-indigo-400 hover:border-indigo-100 hover:bg-indigo-50/30 transition-all flex flex-col items-center gap-2"
-              >
-                <i className="fa-solid fa-plus-circle text-4xl"></i>
-                <span className="text-xl font-bold">添加新句子</span>
-              </button>
-            </div>
-          )}
 
-          {activeTab === 'questions' && (
-            <div className="space-y-6 animate-in fade-in duration-500">
-              <div className="flex justify-between items-center mb-6">
-                <p className="text-slate-400 text-sm">上课过程中，视频运行到指定秒数会自动暂停并弹出题目。</p>
-                <button onClick={addQuestion} className="bg-emerald-500 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-600 transition-all">+ 新增课堂互动题</button>
-              </div>
-              {lesson.questions.map((q, idx) => (
-                <div key={q.id} className="p-8 rounded-3xl bg-slate-50 border-2 border-slate-100 space-y-4">
-                  <div className="flex gap-4 items-center">
-                    <div className="bg-indigo-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">{idx + 1}</div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-400 uppercase">触发时间(秒):</span>
-                      <input 
-                        type="number" step="1" 
-                        className="w-20 px-3 py-1 rounded-lg border font-bold"
-                        value={q.timestamp}
-                        onChange={(e) => updateQuestion(q.id, 'timestamp', parseInt(e.target.value))}
-                      />
+              {lesson.lyrics.map((line, idx) => (
+                <div key={line.id} className="flex gap-8 relative pb-10 border-b border-slate-50 last:border-0 group">
+                  <div className="w-24 flex flex-col items-center gap-3">
+                    <span className="text-4xl font-black text-slate-100 italic group-hover:text-indigo-100">#{idx + 1}</span>
+                    <div className="space-y-1.5 w-full">
+                      <input type="number" className="w-full bg-slate-50 border border-slate-100 rounded-lg p-1.5 text-center text-[11px] font-bold" value={line.startTime} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, startTime: Number(e.target.value)} : l)})} />
+                      <input type="number" className="w-full bg-slate-50 border border-slate-100 rounded-lg p-1.5 text-center text-[11px] font-bold" value={line.endTime} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, endTime: Number(e.target.value)} : l)})} />
                     </div>
                   </div>
-                  <input 
-                    type="text" 
-                    placeholder="输入问题内容..."
-                    className="w-full text-xl font-bold bg-white px-5 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    value={q.question}
-                    onChange={(e) => updateQuestion(q.id, 'question', e.target.value)}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    {q.options.map((opt, oIdx) => (
-                      <div key={oIdx} className="relative group">
-                        <input 
-                          type="text" 
-                          className={`w-full pl-12 pr-4 py-3 rounded-xl border focus:outline-none transition-all ${q.correctIndex === oIdx ? 'border-emerald-500 bg-emerald-50' : 'bg-white'}`}
-                          value={opt}
-                          onChange={(e) => {
-                            const newOpts = [...q.options];
-                            newOpts[oIdx] = e.target.value;
-                            updateQuestion(q.id, 'options', newOpts);
-                          }}
-                        />
-                        <button 
-                          onClick={() => updateQuestion(q.id, 'correctIndex', oIdx)}
-                          className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 ${q.correctIndex === oIdx ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'}`}
-                        />
-                      </div>
-                    ))}
+
+                  <div className="flex-1 space-y-4">
+                    <input className="w-full text-3xl font-black text-slate-800 placeholder-slate-100 focus:outline-none" placeholder="中文..." value={line.chinese} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, chinese: e.target.value} : l)})} />
+                    <input className="w-full text-lg text-slate-400 placeholder-slate-100 focus:outline-none font-medium" placeholder="拼音..." value={line.pinyin} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, pinyin: e.target.value} : l)})} />
+                    <input className="w-full text-slate-400 italic text-sm placeholder-slate-100 focus:outline-none" placeholder="翻译..." value={line.english} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, english: e.target.value} : l)})} />
+                    
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      {line.vocabs.map((v, vIdx) => (
+                        <div key={vIdx} className="bg-slate-50 border border-slate-100 px-3 py-2 rounded-xl flex gap-2 items-center text-xs">
+                          <input placeholder="字" className="w-8 font-bold border-r outline-none bg-transparent" value={v.char} onChange={(e) => updateVocab(line.id, vIdx, 'char', e.target.value)} />
+                          <input placeholder="拼音" className="w-14 border-r outline-none bg-transparent" value={v.pinyin} onChange={(e) => updateVocab(line.id, vIdx, 'pinyin', e.target.value)} />
+                          <input placeholder="释义" className="w-24 outline-none bg-transparent" value={v.explanation} onChange={(e) => updateVocab(line.id, vIdx, 'explanation', e.target.value)} />
+                          <button onClick={() => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, vocabs: l.vocabs.filter((_, i) => i !== vIdx)} : l)})} className="text-slate-300 hover:text-red-400"><i className="fa-solid fa-times"></i></button>
+                        </div>
+                      ))}
+                      <button onClick={() => addVocab(line.id)} className="px-4 py-2 border-2 border-dashed border-slate-100 rounded-xl text-slate-300 text-[10px] font-bold hover:text-indigo-400">+ 词汇解释</button>
+                    </div>
                   </div>
+                  <button onClick={() => setLesson({...lesson, lyrics: lesson.lyrics.filter(l => l.id !== line.id)})} className="absolute top-0 right-0 text-slate-100 hover:text-red-400 opacity-0 group-hover:opacity-100"><i className="fa-solid fa-trash-can"></i></button>
                 </div>
               ))}
+              <button onClick={() => setLesson({...lesson, lyrics: [...lesson.lyrics, { id: Date.now().toString(), startTime: 0, endTime: 0, chinese: '', pinyin: '', english: '', vocabs: [], isHomework: true }]})} className="w-full py-10 border-2 border-dashed border-slate-100 rounded-[2.5rem] text-slate-200 font-black text-xl hover:bg-slate-50 hover:text-indigo-400">+ 添加新句段</button>
             </div>
           )}
 
           {activeTab === 'students' && (
-            <div className="space-y-10">
-              <div className="grid grid-cols-2 gap-8">
-                <div className="p-8 bg-indigo-50 rounded-[2rem] border border-indigo-100">
-                  <h3 className="text-xl font-bold text-indigo-900 mb-2">生成学生专属作业</h3>
-                  <p className="text-indigo-600/70 text-sm mb-6">作业将包含您在第二步中勾选的所有句子。下载后请放置在 GitHub 仓库的 `public/data/` 目录下。</p>
-                  <div className="flex gap-4">
-                    <input id="studentIdInput" type="text" placeholder="输入学生拼音 (如: lilei)" className="flex-1 px-5 py-3 rounded-2xl border-2 border-indigo-200 focus:outline-none focus:border-indigo-500" />
-                    <button 
-                      onClick={() => {
-                        const sid = (document.getElementById('studentIdInput') as HTMLInputElement).value;
-                        if (!sid) return alert("请输入学生ID");
-                        exportJSON(sid);
-                      }} 
-                      className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100"
-                    >
-                      点击下载 JSON
-                    </button>
-                  </div>
+            <div className="space-y-12">
+              {/* 云端数据源设置 */}
+              <div className="bg-slate-50 p-8 rounded-[2rem] border-2 border-slate-100">
+                <h3 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2">
+                  <i className="fa-solid fa-cloud text-indigo-500"></i> 云端同步设置 (由老师配置)
+                </h3>
+                <p className="text-sm text-slate-500 mb-6 font-medium">在此输入您的 GitHub Pages 或静态网站 URL。学生将从此地址自动拉取作业。</p>
+                <div className="flex gap-4">
+                  <input 
+                    className="flex-1 p-4 rounded-xl border-2 border-white focus:border-indigo-400 outline-none font-mono text-xs shadow-inner" 
+                    placeholder="https://yourname.github.io/mandarin-data/"
+                    value={cloudBaseUrl}
+                    onChange={(e) => setCloudBaseUrl(e.target.value)}
+                  />
+                  <button onClick={() => alert("配置已保存！")} className="bg-white border-2 border-indigo-100 text-indigo-600 px-6 py-4 rounded-xl font-black text-xs hover:bg-indigo-50">保存配置</button>
                 </div>
+              </div>
 
-                <div className="p-8 bg-slate-50 rounded-[2rem] border">
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">批改与提交记录</h3>
-                  <div className="mt-4 space-y-3 max-h-[200px] overflow-y-auto">
-                    {mockResults.length === 0 ? (
-                      <div className="text-center py-10">
-                        <i className="fa-solid fa-clipboard-list text-slate-200 text-4xl mb-2"></i>
-                        <p className="text-slate-400 text-sm italic">学生完成作业后会向您反馈成绩</p>
+              <div className="flex justify-between items-center">
+                <h3 className="text-2xl font-black text-slate-800">学生名册</h3>
+                <button onClick={addStudent} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-indigo-700">+ 新建学生</button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-8">
+                {db.students.map(s => (
+                  <div key={s.id} className="bg-white border-2 border-slate-100 p-8 rounded-[2.5rem] hover:border-indigo-100 transition-all group">
+                    <div className="flex justify-between mb-8">
+                      <div>
+                        <h4 className="text-2xl font-black text-slate-800">{s.name}</h4>
+                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">文件名: {s.id}.json</p>
                       </div>
-                    ) : (
-                      mockResults.map((r, i) => (
-                        <div key={i} className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                           <span className="font-bold">{r.studentId}</span>
-                           <span className="text-emerald-500 font-black">{r.score} 分</span>
-                        </div>
-                      ))
-                    )}
+                      <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-200 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                        <i className="fa-solid fa-user-graduate text-xl"></i>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <button onClick={() => assignToStudent(s.id)} className="w-full bg-indigo-50 text-indigo-600 py-4 rounded-2xl font-black text-sm hover:bg-indigo-100">指派当前课程</button>
+                      <button onClick={() => exportStudentPackage(s.id)} className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-black text-sm shadow-lg hover:bg-emerald-600">
+                        <i className="fa-solid fa-download"></i> 导出作业包 (准备上传)
+                      </button>
+                      <div className="pt-2 text-[9px] text-slate-400 font-bold leading-relaxed">
+                        学生访问: <span className="text-indigo-400 select-all">{window.location.origin}/#/student/{s.id}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
             </div>
           )}
+
+          {activeTab === 'info' && (
+             <div className="space-y-10 max-w-2xl mx-auto py-10">
+               <div className="space-y-3">
+                 <label className="text-xs font-black text-slate-300 uppercase tracking-widest">课程标题</label>
+                 <input className="w-full p-6 bg-slate-50 rounded-[1.5rem] text-2xl font-black outline-none border-2 border-transparent focus:border-indigo-400 shadow-inner" value={lesson.title} onChange={(e) => setLesson({...lesson, title: e.target.value})} />
+               </div>
+               <div className="space-y-3">
+                 <label className="text-xs font-black text-slate-300 uppercase tracking-widest">YouTube 链接/ID</label>
+                 <input className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none border-2 border-transparent focus:border-indigo-400 font-mono text-indigo-600 shadow-inner" value={lesson.videoUrl} onChange={(e) => setLesson({...lesson, videoUrl: e.target.value})} />
+               </div>
+             </div>
+          )}
         </div>
       </main>
+
+      {showBatchModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-6">
+           <div className="bg-white rounded-[3rem] p-12 max-w-2xl w-full shadow-2xl">
+              <h3 className="text-3xl font-black text-slate-800 mb-2">批量粘贴</h3>
+              <textarea className="w-full h-72 p-8 bg-slate-50 rounded-[2rem] border-2 border-slate-100 focus:outline-none focus:border-indigo-400 font-medium text-lg" placeholder="在此粘贴文本..." value={batchText} onChange={(e) => setBatchText(e.target.value)}></textarea>
+              <div className="flex gap-4 mt-10">
+                 <button onClick={() => setShowBatchModal(false)} className="flex-1 py-5 bg-slate-100 rounded-2xl font-bold text-slate-500">取消</button>
+                 <button onClick={() => {
+                   const lines = batchText.split('\n').filter(l => l.trim().length > 0);
+                   const newLyrics: LyricLine[] = lines.map((text, idx) => ({ id: Math.random().toString(36).substr(2, 9), startTime: idx * 5, endTime: (idx + 1) * 5, chinese: text.trim(), pinyin: '', english: '', vocabs: [], isHomework: true }));
+                   setLesson({ ...lesson, lyrics: [...lesson.lyrics, ...newLyrics] });
+                   setBatchText(''); setShowBatchModal(false);
+                 }} className="flex-1 py-5 bg-indigo-600 rounded-2xl font-bold text-white">确认导入</button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
