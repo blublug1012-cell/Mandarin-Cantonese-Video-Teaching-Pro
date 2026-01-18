@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import TeacherEditor from './components/TeacherEditor';
 import ClassroomView from './components/ClassroomView';
@@ -23,16 +22,21 @@ const App: React.FC = () => {
         setStudentId(id);
         setView('student');
       } else if (hash === '#/classroom') {
-        const saved = localStorage.getItem('activeLesson');
-        if (saved) {
-          setActiveLesson(JSON.parse(saved));
-          setView('classroom');
-        } else {
+        try {
+          const saved = localStorage.getItem('activeLesson');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            setActiveLesson(parsed);
+            setView('classroom');
+          } else {
+            window.location.hash = '#/teacher';
+          }
+        } catch (e) {
           window.location.hash = '#/teacher';
         }
       } else if (hash === '#/teacher') {
         setView('teacher');
-      } else {
+      } else if (hash === '' || hash === '#/') {
         setView('landing');
       }
     };
@@ -52,9 +56,13 @@ const App: React.FC = () => {
   };
 
   const loadLessonForClass = (lesson: LessonData) => {
+    if (!lesson) return;
     localStorage.setItem('activeLesson', JSON.stringify(lesson));
     setActiveLesson(lesson);
-    window.location.hash = '#/classroom';
+    // 强制先更新状态，再切换路由
+    setTimeout(() => {
+      window.location.hash = '#/classroom';
+    }, 50);
   };
 
   return (
