@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { LyricLine, Vocab } from '../types';
 
@@ -8,16 +7,16 @@ interface Props {
 }
 
 const LyricLineDisplay: React.FC<Props> = ({ line, onVocabClick }) => {
-  const chars = Array.from(line.chinese.replace(/\s/g, ''));
-  const pinyins = line.pinyin.split(/\s+/).filter(p => p.length > 0);
+  if (!line) return null;
+  const chars = Array.from((line.chinese || '').replace(/\s/g, ''));
+  const pinyins = (line.pinyin || '').split(/\s+/).filter(p => p.length > 0);
 
   return (
     <div className="flex flex-col items-center py-6 px-4">
       <div className="flex flex-wrap justify-center gap-x-8 gap-y-12 mb-10">
         {chars.map((char, i) => {
           const py = pinyins[i] || '';
-          // Check if this char is part of any vocab
-          const vocab = line.vocabs.find(v => v.char.includes(char));
+          const vocab = (line.vocabs || []).find(v => v.char.includes(char));
           
           return (
             <div 
@@ -36,7 +35,7 @@ const LyricLineDisplay: React.FC<Props> = ({ line, onVocabClick }) => {
       </div>
       <div className="max-w-2xl text-center">
         <p className="text-slate-400 text-2xl font-medium italic border-t border-slate-100 pt-6">
-          "{line.english}"
+          "{line.english || ''}"
         </p>
       </div>
     </div>

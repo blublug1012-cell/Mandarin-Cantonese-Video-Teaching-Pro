@@ -49,7 +49,7 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
 
   const fetchCloudData = async () => {
     if (!cloudBaseUrl) {
-      setError("链接中缺少同步配置信息，请联系老师重新发送链接。");
+      setError("链接中缺少同步配置信息。");
       return;
     }
     setIsSyncing(true);
@@ -60,10 +60,7 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
       if (!response.ok) throw new Error("Fetch failed");
       const imported = await response.json();
       
-      const newDb = { 
-        lessons: {...db.lessons, ...imported.lessons}, 
-        students: imported.students 
-      };
+      const newDb = { lessons: {...db.lessons, ...imported.lessons}, students: imported.students };
       setDb(newDb);
       localStorage.setItem('teaching_db', JSON.stringify(newDb));
       localStorage.setItem('teacher_cloud_url', cloudBaseUrl);
@@ -71,12 +68,9 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
       const foundStudent = imported.students.find((s: any) => s.id === studentId);
       if (foundStudent) setStudent(foundStudent);
       else throw new Error("Student not found");
-      
     } catch (err) { 
-      setError("同步云端数据失败。请检查 GitHub Pages 是否已部署，且文件已上传。");
-    } finally { 
-      setIsSyncing(false); 
-    }
+      setError("无法同步作业。请确保老师已上传作业文件并公开部署。");
+    } finally { setIsSyncing(false); }
   };
 
   useEffect(() => {
@@ -107,7 +101,6 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
         if (nextIdx < homeworkLines.length) {
           setCurrentLineIdx(nextIdx);
           setGameState('learning');
-          setVideoPlaying(true);
           setSeekTarget(homeworkLines[nextIdx].startTime);
         } else {
           setupFinalChallenge();
@@ -126,15 +119,23 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
 
   const setupFinalChallenge = () => {
     const gaps: typeof finalGaps = [];
+    const distractors = ['的', '了', '不', '是', '有', '在', '我', '你', '大', '小', '好', '人'];
+    
     homeworkLines.forEach(l => {
-      if (l.vocabs.length > 0) {
-        const v = l.vocabs[Math.floor(Math.random() * l.vocabs.length)];
-        const distractors = ['的', '了', '不', '是', '有', '在', '我', '你'];
-        const randomDistractor = distractors[Math.floor(Math.random()*distractors.length)];
+      let targetChar = '';
+      if (l.vocabs && l.vocabs.length > 0) {
+        targetChar = l.vocabs[Math.floor(Math.random() * l.vocabs.length)].char;
+      } else if (l.chinese.length > 0) {
+        // 如果没有重点词，随机选一个汉字
+        const chars = Array.from(l.chinese.replace(/\s+/g, ''));
+        targetChar = chars[Math.floor(Math.random() * chars.length)];
+      }
+
+      if (targetChar) {
         gaps.push({
           lineId: l.id,
-          vocabChar: v.char,
-          options: [v.char, randomDistractor].sort(() => Math.random() - 0.5),
+          vocabChar: targetChar,
+          options: [targetChar, distractors[Math.floor(Math.random()*distractors.length)]].sort(() => Math.random() - 0.5),
           userChoice: null
         });
       }
@@ -147,57 +148,30 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
     }
   };
 
-  const handleFinalChoice = (idx: number, choice: string) => {
+  const handleFinalChoice = (index: number, choice: string) => {
     const newGaps = [...finalGaps];
-    if (newGaps[idx].userChoice) return;
-    newGaps[idx].userChoice = choice;
+    if(newGaps[index].userChoice) return;
+    newGaps[index].userChoice = choice;
     setFinalGaps(newGaps);
-    if (choice === newGaps[idx].vocabChar) setScore(s => s + 5);
+    if (choice === newGaps[index].vocabChar) {
+      setScore(s => s + 20);
+    }
   };
 
   if (isSyncing) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-indigo-600 text-white p-6">
-       <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin mb-6"></div>
-       <p className="font-black text-xl animate-pulse">正在同步您的个人作业库...</p>
-    </div>
+    <div className="min-h-screen flex items-center justify-center bg-indigo-600 text-white"><p className="animate-pulse font-black text-xl">同步作业中...</p></div>
   );
 
   if (!activeLesson) {
     return (
       <div className="min-h-screen bg-slate-50 p-12">
         <div className="max-w-4xl mx-auto">
-          <div className="flex justify-between items-center mb-12">
-            <div>
-               <h1 className="text-4xl font-black text-slate-900 leading-tight">你好, {student?.name || '同学'}! 👋</h1>
-               <p className="text-slate-400 font-bold mt-2">在这里复习您的所有已指派课程</p>
-            </div>
-            <button onClick={fetchCloudData} className="bg-white border-2 border-indigo-100 text-indigo-600 px-6 py-3 rounded-2xl font-black text-sm shadow-sm hover:bg-indigo-50 transition-all flex items-center gap-2">
-              <i className="fa-solid fa-sync"></i> 手动刷新同步
-            </button>
-          </div>
-          {error && (
-            <div className="bg-red-50 text-red-600 p-8 rounded-3xl mb-12 font-bold border-2 border-red-100 flex items-start gap-4">
-               <i className="fa-solid fa-circle-exclamation text-2xl mt-1"></i>
-               <div><p className="text-lg">同步失败</p><p className="text-sm opacity-80 mt-1">{error}</p></div>
-            </div>
-          )}
-          
+          <h1 className="text-4xl font-black mb-12">你好, {student?.name || '同学'}!</h1>
           <div className="grid grid-cols-2 gap-8">
             {student?.assignedLessons.map(id => (
-              <div key={id} onClick={() => {
-                if(!db.lessons[id]) { alert("该课程内容还未同步，请点击上方刷新。"); return; }
-                setActiveLesson(db.lessons[id]);
-                setCurrentLineIdx(0);
-                setGameState('learning');
-                setScore(0);
-                const firstHw = db.lessons[id].lyrics.filter(l => l.isHomework)[0];
-                setSeekTarget(firstHw?.startTime);
-                setVideoPlaying(true);
-              }} className="bg-white p-10 rounded-[3rem] shadow-xl shadow-slate-200 border-4 border-transparent hover:border-indigo-400 cursor-pointer transition-all hover:-translate-y-2 group">
-                <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-6 group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                  <i className="fa-solid fa-play text-xl"></i>
-                </div>
-                <h3 className="text-2xl font-black text-slate-800 leading-tight">{db.lessons[id]?.title || '未命名的课程'}</h3>
+              <div key={id} onClick={() => { setActiveLesson(db.lessons[id]); setGameState('learning'); setVideoPlaying(true); setSeekTarget(db.lessons[id]?.lyrics.filter(l => l.isHomework)[0]?.startTime); }} className="bg-white p-10 rounded-[3rem] shadow-xl hover:border-indigo-400 border-4 border-transparent cursor-pointer transition-all">
+                <h3 className="text-2xl font-black">{db.lessons[id]?.title || '未命名'}</h3>
+                <p className="text-indigo-400 font-bold mt-4 uppercase text-[10px]">点击开始挑战</p>
               </div>
             ))}
           </div>
@@ -207,137 +181,102 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
   }
 
   return (
-    <div className="min-h-screen bg-indigo-600 p-8 font-sans text-white overflow-x-hidden relative">
+    <div className="min-h-screen bg-indigo-600 p-8 font-sans text-white relative">
       <div className="max-w-5xl mx-auto">
         <header className="flex justify-between items-center mb-12">
-           <button onClick={() => setActiveLesson(null)} className="bg-white/10 hover:bg-white/20 px-8 py-3 rounded-2xl font-black transition-all flex items-center gap-2">
-             <i className="fa-solid fa-chevron-left"></i> 返回列表
-           </button>
+           <button onClick={() => setActiveLesson(null)} className="bg-white/10 px-8 py-3 rounded-2xl font-black flex items-center gap-2"><i className="fa-solid fa-chevron-left"></i> 返回</button>
            <div className="text-right">
-             <p className="text-indigo-200 font-black uppercase tracking-widest text-[10px] mb-1">当前积分 SCORE</p>
-             <p className="text-5xl font-black tabular-nums">{score}</p>
+             <p className="text-xs uppercase font-black text-indigo-200">总分</p>
+             <p className="text-5xl font-black">{score}</p>
            </div>
         </header>
 
-        {gameState === 'learning' && currentLine && (
-          <div className="space-y-12 animate-in fade-in zoom-in duration-500">
-            <div className="bg-black rounded-[3rem] overflow-hidden shadow-2xl border-8 border-white/10 aspect-video max-w-3xl mx-auto relative">
+        {(gameState === 'learning' || gameState === 'ordering') && currentLine && (
+          <div className="space-y-12">
+            <div className="bg-black rounded-[3rem] overflow-hidden shadow-2xl border-8 border-white/10 aspect-video max-w-3xl mx-auto">
               <YouTubePlayer url={activeLesson.videoUrl} playing={videoPlaying} playbackRate={1} onProgress={(s) => {
-                if (s.playedSeconds > currentLine.endTime) {
-                  setSeekTarget(currentLine.startTime);
-                }
+                if (s.playedSeconds > currentLine.endTime) setSeekTarget(currentLine.startTime);
               }} seekTo={seekTarget} />
             </div>
             <div className="bg-white text-slate-800 p-12 rounded-[4rem] shadow-2xl relative">
-              <div className="absolute top-[-1.5rem] left-1/2 -translate-x-1/2 bg-yellow-400 text-black px-10 py-3 rounded-full font-black shadow-xl text-sm uppercase tracking-widest">第一步：仔细听、跟着读</div>
-              <LyricLineDisplay line={currentLine} onVocabClick={(v) => { setSelectedVocab(v); setVideoPlaying(false); }} />
-              <button onClick={() => startOrderingGame(currentLine)} className="w-full mt-12 bg-indigo-600 text-white py-7 rounded-[2rem] font-black text-2xl shadow-xl hover:scale-105 active:scale-95 transition-all shadow-indigo-900/20">
-                学完了，开始句序挑战！
-              </button>
+              {gameState === 'learning' ? (
+                <>
+                  <div className="absolute top-[-1.5rem] left-1/2 -translate-x-1/2 bg-yellow-400 text-black px-10 py-3 rounded-full font-black text-sm uppercase">第一步：仔细听、跟着读</div>
+                  <LyricLineDisplay line={currentLine} onVocabClick={(v) => { setSelectedVocab(v); setVideoPlaying(false); }} />
+                  <button onClick={() => startOrderingGame(currentLine)} className="w-full mt-12 bg-indigo-600 text-white py-7 rounded-[2rem] font-black text-2xl">学完了，开始句序挑战！</button>
+                </>
+              ) : (
+                <div className="space-y-8">
+                  <div className="text-center"><h2 className="text-3xl font-black mb-4">挑战：语序还原</h2></div>
+                  <div className="bg-slate-50 border-4 border-dashed border-slate-100 p-8 rounded-[3rem] min-h-[150px] flex flex-wrap justify-center items-center gap-4">
+                    {userOrder.map((c, i) => <button key={i} onClick={() => { setUserOrder(userOrder.filter((_, idx) => idx !== i)); setShuffledChars([...shuffledChars, c]); }} className="w-16 h-20 bg-indigo-600 text-white rounded-2xl text-4xl font-black shadow-lg">{c}</button>)}
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-4">
+                    {shuffledChars.map((c, i) => <button key={i} onClick={() => { setUserOrder([...userOrder, c]); setShuffledChars(shuffledChars.filter((_, idx) => idx !== i)); }} className="w-14 h-16 bg-white text-slate-800 rounded-2xl text-3xl font-black border-2">{c}</button>)}
+                  </div>
+                  {feedback && <div className={`p-6 rounded-2xl text-center text-xl font-black ${feedback.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>{feedback.msg}</div>}
+                  <button onClick={() => checkOrder(currentLine)} disabled={shuffledChars.length > 0} className="w-full py-6 bg-yellow-400 text-black rounded-[2rem] font-black text-2xl disabled:opacity-30">确认提交</button>
+                </div>
+              )}
             </div>
-          </div>
-        )}
-
-        {gameState === 'ordering' && currentLine && (
-          <div className="space-y-12 animate-in slide-in-from-right duration-500">
-             <div className="bg-black rounded-[2.5rem] overflow-hidden shadow-2xl border-4 border-white/10 aspect-video max-w-xl mx-auto">
-                <YouTubePlayer url={activeLesson.videoUrl} playing={videoPlaying} playbackRate={1} onProgress={(s) => {
-                  if (s.playedSeconds > currentLine.endTime) setSeekTarget(currentLine.startTime);
-                }} seekTo={seekTarget} />
-             </div>
-             <div className="text-center">
-               <h2 className="text-5xl font-black mb-4">挑战：语序还原</h2>
-               <p className="text-indigo-200 text-xl font-bold italic opacity-80">根据听到的声音拼出正确顺序</p>
-             </div>
-             <div className="bg-white/10 border-4 border-dashed border-white/20 p-12 rounded-[4rem] min-h-[200px] flex flex-wrap justify-center items-center gap-4">
-                {userOrder.map((c, i) => (
-                  <button key={i} onClick={() => { setUserOrder(userOrder.filter((_, idx) => idx !== i)); setShuffledChars([...shuffledChars, c]); }} className="w-20 h-24 bg-white text-indigo-900 rounded-2xl text-5xl font-black shadow-xl flex items-center justify-center animate-in zoom-in">{c}</button>
-                ))}
-             </div>
-             <div className="flex flex-wrap justify-center gap-4">
-                {shuffledChars.map((c, i) => (
-                  <button key={i} onClick={() => { setUserOrder([...userOrder, c]); setShuffledChars(shuffledChars.filter((_, idx) => idx !== i)); }} className="w-16 h-20 bg-indigo-400 hover:bg-white hover:text-indigo-900 text-white rounded-2xl text-4xl font-black shadow-lg transition-all flex items-center justify-center active:scale-90">{c}</button>
-                ))}
-             </div>
-             {feedback && <div className={`p-8 rounded-3xl text-center text-3xl font-black animate-bounce shadow-2xl ${feedback.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>{feedback.msg}</div>}
-             <div className="flex gap-6 max-w-2xl mx-auto">
-                <button onClick={() => { setUserOrder([]); setShuffledChars([...currentLine.chinese.replace(/\s+/g,'')].sort(() => Math.random()-0.5)) }} className="flex-1 py-6 bg-white/10 rounded-3xl font-black hover:bg-white/20 transition-all">清空重来</button>
-                <button onClick={() => checkOrder(currentLine)} disabled={shuffledChars.length > 0} className={`flex-[2] py-6 rounded-3xl font-black text-2xl shadow-2xl transition-all ${shuffledChars.length > 0 ? 'bg-white/20 cursor-not-allowed opacity-50' : 'bg-yellow-400 text-black hover:scale-105 active:scale-95'}`}>确认提交</button>
-             </div>
           </div>
         )}
 
         {gameState === 'finalChallenge' && (
-          <div className="space-y-12 animate-in slide-in-from-bottom duration-700">
+          <div className="space-y-12 animate-in slide-in-from-bottom duration-500">
              <div className="bg-black rounded-[3rem] overflow-hidden shadow-2xl border-8 border-white/10 aspect-video max-w-3xl mx-auto sticky top-4 z-50">
                 <YouTubePlayer url={activeLesson.videoUrl} playing={videoPlaying} playbackRate={1} onProgress={() => {}} seekTo={seekTarget} />
              </div>
-             <div className="text-center">
-                <h2 className="text-6xl font-black mb-4 tracking-tighter">终极填空大挑战</h2>
-                <p className="text-indigo-200 text-xl font-bold opacity-80 italic">点击对应的行播放视频并完成填空</p>
-             </div>
-             
-             <div className="bg-white p-14 rounded-[4rem] text-slate-800 space-y-14 shadow-2xl">
-                {homeworkLines.map((line, lIdx) => {
-                  const gap = finalGaps.find(g => g.lineId === line.id);
-                  if (!gap) return null;
+             <div className="bg-white p-14 rounded-[4rem] text-slate-800 space-y-14">
+                <h2 className="text-4xl font-black text-center mb-10">终极填空大挑战</h2>
+                {finalGaps.map((gap, gIdx) => {
+                  const line = homeworkLines.find(l => l.id === gap.lineId);
+                  if(!line) return null;
                   return (
-                    <div key={line.id} onClick={() => { setSeekTarget(line.startTime); setVideoPlaying(true); }} className="pb-10 border-b-4 border-slate-50 last:border-0 cursor-pointer hover:bg-slate-50 p-4 rounded-3xl transition-all">
-                      <div className="flex flex-wrap items-center gap-x-6 gap-y-10 text-5xl font-black leading-tight">
+                    <div key={line.id} onClick={() => { setSeekTarget(line.startTime); setVideoPlaying(true); }} className="pb-8 border-b cursor-pointer hover:bg-slate-50 p-6 rounded-3xl transition-all">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-10 text-4xl font-black">
                          {Array.from(line.chinese.replace(/\s+/g,'')).map((c, ci) => {
                            if (c === gap.vocabChar) {
                              return (
-                               <div key={ci} className="relative inline-flex flex-col" onClick={e => e.stopPropagation()}>
+                               <div key={ci} className="relative inline-flex gap-2" onClick={e => e.stopPropagation()}>
                                  {gap.userChoice ? (
-                                   <span className={`pb-2 border-b-4 ${gap.userChoice === gap.vocabChar ? 'text-indigo-600 border-indigo-600' : 'text-red-500 border-red-500 animate-pulse'}`}>{gap.userChoice}</span>
+                                   <span className={gap.userChoice === gap.vocabChar ? 'text-indigo-600 underline' : 'text-red-500 underline'}>{gap.userChoice}</span>
                                  ) : (
-                                   <div className="flex gap-3 bg-slate-50 p-2 rounded-2xl shadow-inner border border-slate-100">
-                                     {gap.options.map(opt => (
-                                       <button key={opt} onClick={() => handleFinalChoice(finalGaps.indexOf(gap), opt)} className="bg-white hover:bg-indigo-600 hover:text-white px-5 py-3 rounded-xl text-2xl transition-all border-2 border-slate-100 shadow-sm">{opt}</button>
-                                     ))}
+                                   <div className="flex gap-2 bg-slate-100 p-2 rounded-xl">
+                                     {gap.options.map(opt => <button key={opt} onClick={() => handleFinalChoice(gIdx, opt)} className="bg-white hover:bg-indigo-600 hover:text-white px-4 py-2 rounded-lg text-xl transition-all">{opt}</button>)}
                                    </div>
                                  )}
                                </div>
                              );
                            }
-                           return <span key={ci} className="text-slate-300 opacity-60">{c}</span>;
+                           return <span key={ci} className="text-slate-300">{c}</span>;
                          })}
                       </div>
-                      <p className="text-xl italic text-slate-400 mt-6 font-medium">"{line.english}"</p>
                     </div>
                   );
                 })}
-                <button onClick={() => setGameState('completed')} disabled={finalGaps.some(g => !g.userChoice)} className={`w-full py-8 rounded-[2rem] font-black text-3xl shadow-2xl transition-all ${finalGaps.some(g => !g.userChoice) ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-indigo-600 text-white hover:scale-105 active:scale-95'}`}>查看最终评分</button>
+                <button onClick={() => setGameState('completed')} disabled={finalGaps.some(g => !g.userChoice)} className="w-full py-8 bg-indigo-600 text-white rounded-[2rem] font-black text-3xl disabled:opacity-30">完成练习</button>
              </div>
           </div>
         )}
 
         {gameState === 'completed' && (
-           <div className="text-center space-y-12 py-20 animate-in zoom-in duration-500">
-              <div className="w-56 h-56 bg-yellow-400 rounded-full flex items-center justify-center mx-auto shadow-xl ring-8 ring-white/20 animate-bounce">
-                 <i className="fa-solid fa-trophy text-9xl text-black"></i>
-              </div>
-              <h2 className="text-7xl font-black tracking-tighter">太牛了！复习完成</h2>
-              <div className="bg-white/10 p-14 rounded-[4rem] inline-block border-4 border-white/20 shadow-2xl">
-                <p className="text-[12px] font-black uppercase tracking-[0.3em] text-indigo-200 mb-4 opacity-70">本次练习得分 FINAL SCORE</p>
-                <p className="text-9xl font-black tabular-nums">{score}</p>
-              </div>
-              <button onClick={() => setActiveLesson(null)} className="block mx-auto bg-white text-indigo-600 px-16 py-6 rounded-[2rem] font-black text-3xl shadow-2xl hover:scale-110 active:scale-95 transition-all">返回课程列表</button>
+           <div className="text-center py-20 space-y-12">
+              <div className="w-56 h-56 bg-yellow-400 rounded-full flex items-center justify-center mx-auto shadow-2xl animate-bounce"><i className="fa-solid fa-trophy text-9xl text-black"></i></div>
+              <h2 className="text-7xl font-black">太牛了！练习完成</h2>
+              <div className="bg-white/10 p-14 rounded-[4rem] border-4 border-white/20"><p className="text-9xl font-black">{score}</p></div>
+              <button onClick={() => setActiveLesson(null)} className="bg-white text-indigo-600 px-16 py-6 rounded-[2rem] font-black text-3xl">返回课程列表</button>
            </div>
         )}
       </div>
 
       {selectedVocab && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-6" onClick={() => setSelectedVocab(null)}>
-          <div className="bg-white text-slate-900 rounded-[3rem] p-12 max-w-lg w-full shadow-2xl relative animate-in zoom-in duration-300 overflow-hidden" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setSelectedVocab(null)} className="absolute top-8 right-8 w-12 h-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center"><i className="fa-solid fa-times text-xl"></i></button>
-            <div className="text-center">
-              <div className="text-8xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-br from-indigo-600 to-blue-500">{selectedVocab.char}</div>
-              <div className="text-2xl font-black text-slate-300 mb-10 tracking-[0.2em] uppercase">{selectedVocab.pinyin}</div>
-              <div className="h-px bg-slate-100 mb-6"></div>
-              <p className="text-3xl text-slate-700 leading-tight font-black">{selectedVocab.explanation}</p>
-              <button onClick={() => { setSelectedVocab(null); setVideoPlaying(true); }} className="w-full mt-12 bg-indigo-600 py-5 rounded-[1.5rem] text-white font-black text-lg shadow-xl transition-all">继续学习</button>
-            </div>
+          <div className="bg-white text-slate-900 rounded-[3rem] p-12 max-w-lg w-full shadow-2xl text-center" onClick={e => e.stopPropagation()}>
+            <div className="text-8xl font-black mb-4 text-indigo-600">{selectedVocab.char}</div>
+            <div className="text-2xl font-black text-slate-300 mb-10">{selectedVocab.pinyin}</div>
+            <p className="text-3xl text-slate-700 font-black">{selectedVocab.explanation}</p>
+            <button onClick={() => { setSelectedVocab(null); setVideoPlaying(true); }} className="w-full mt-12 bg-indigo-600 py-5 rounded-[1.5rem] text-white font-black">继续学习</button>
           </div>
         </div>
       )}
