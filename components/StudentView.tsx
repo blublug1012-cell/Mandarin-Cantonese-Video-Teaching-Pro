@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import YouTubePlayer from './YouTubePlayer';
 import LyricLineDisplay from './LyricLineDisplay';
@@ -9,6 +8,23 @@ interface Props {
 }
 
 const StudentView: React.FC<Props> = ({ studentId }) => {
+  // 从 URL 参数解析云端地址
+  const getCloudUrlFromParams = () => {
+    const hash = window.location.hash;
+    if (hash.includes('?')) {
+      const params = new URLSearchParams(hash.split('?')[1]);
+      const cloudParam = params.get('c');
+      if (cloudParam) {
+        try {
+          return atob(decodeURIComponent(cloudParam));
+        } catch (e) {
+          return null;
+        }
+      }
+    }
+    return localStorage.getItem('teacher_cloud_url') || '';
+  };
+
   const [db, setDb] = useState<Database>(() => {
     const saved = localStorage.getItem('teaching_db');
     return saved ? JSON.parse(saved) : { lessons: {}, students: [] };
@@ -18,6 +34,7 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
   const [activeLesson, setActiveLesson] = useState<LessonData | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cloudBaseUrl, setCloudBaseUrl] = useState(getCloudUrlFromParams());
 
   // 游戏逻辑相关状态
   const [gameState, setGameState] = useState<'learning' | 'ordering' | 'finalChallenge' | 'completed'>('learning');
@@ -28,32 +45,44 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
   const [feedback, setFeedback] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
   const [finalGaps, setFinalGaps] = useState<{lineId: string, vocabChar: string, options: string[], userChoice: string | null}[]>([]);
 
-  const cloudBaseUrl = localStorage.getItem('teacher_cloud_url') || '';
-
-  useEffect(() => {
-    const found = db.students.find(s => s.id === studentId);
-    if (found) setStudent(found);
-    else if (cloudBaseUrl) fetchCloudData();
-  }, [studentId, db]);
-
   const fetchCloudData = async () => {
-    if (!cloudBaseUrl) return;
+    if (!cloudBaseUrl) {
+      setError("链接中缺少同步配置信息，请联系老师重新发送链接。");
+      return;
+    }
     setIsSyncing(true);
+    setError(null);
     const baseUrl = cloudBaseUrl.endsWith('/') ? cloudBaseUrl : cloudBaseUrl + '/';
     try {
       const response = await fetch(`${baseUrl}${studentId}.json`, { cache: 'no-store' });
       if (!response.ok) throw new Error("Fetch failed");
       const imported = await response.json();
-      const newDb = { lessons: {...db.lessons, ...imported.lessons}, students: [...db.students, ...imported.students] };
+      
+      const newDb = { 
+        lessons: {...db.lessons, ...imported.lessons}, 
+        students: imported.students // 以云端为准
+      };
       setDb(newDb);
       localStorage.setItem('teaching_db', JSON.stringify(newDb));
-      setStudent(imported.students.find((s: any) => s.id === studentId));
+      localStorage.setItem('teacher_cloud_url', cloudBaseUrl); // 持久化保存
+      
+      const foundStudent = imported.students.find((s: any) => s.id === studentId);
+      if (foundStudent) setStudent(foundStudent);
+      else throw new Error("Student not found in JSON");
+      
     } catch (err) { 
-      setError("同步云端数据失败，请确认 GitHub 仓库链接是否正确且文件已上传。");
+      setError("同步云端数据失败。请检查 GitHub Pages 是否已部署，且文件已上传。");
     } finally { 
       setIsSyncing(false); 
     }
   };
+
+  useEffect(() => {
+    // 如果没有学生信息或者需要强制同步，则执行
+    if (!student) {
+      fetchCloudData();
+    }
+  }, [studentId, cloudBaseUrl]);
 
   // 排序挑战初始化
   const startOrderingGame = (line: LyricLine) => {
@@ -121,33 +150,63 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
     if (choice === newGaps[idx].vocabChar) setScore(s => s + 5);
   };
 
-  if (isSyncing) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-indigo-600 font-black text-xl animate-pulse">正在从 GitHub 云端同步课件...</div>;
+  if (isSyncing) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-indigo-600 text-white p-6">
+       <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin mb-6"></div>
+       <p className="font-black text-xl animate-pulse">正在同步您的个人作业库...</p>
+    </div>
+  );
 
   if (!activeLesson) {
     return (
       <div className="min-h-screen bg-slate-50 p-12">
         <div className="max-w-4xl mx-auto">
           <div className="flex justify-between items-center mb-12">
-            <h1 className="text-4xl font-black text-slate-900">你好, {student?.name || '同学'}! 👋</h1>
-            <button onClick={fetchCloudData} className="bg-white border-2 border-indigo-100 text-indigo-600 px-6 py-2 rounded-2xl font-black text-sm shadow-sm hover:bg-indigo-50 transition-all">同步云端</button>
+            <div>
+               <h1 className="text-4xl font-black text-slate-900 leading-tight">你好, {student?.name || '同学'}! 👋</h1>
+               <p className="text-slate-400 font-bold mt-2">在这里复习您的所有已指派课程</p>
+            </div>
+            <button onClick={fetchCloudData} className="bg-white border-2 border-indigo-100 text-indigo-600 px-6 py-3 rounded-2xl font-black text-sm shadow-sm hover:bg-indigo-50 transition-all flex items-center gap-2">
+              <i className="fa-solid fa-sync"></i> 手动刷新同步
+            </button>
           </div>
-          {error && <div className="bg-red-50 text-red-500 p-6 rounded-3xl mb-8 font-bold border-2 border-red-100">{error}</div>}
-          <div className="grid grid-cols-2 gap-8">
-            {student?.assignedLessons.map(id => (
-              <div key={id} onClick={() => {
-                setActiveLesson(db.lessons[id]);
-                setCurrentLineIdx(0);
-                setGameState('learning');
-                setScore(0);
-              }} className="bg-white p-10 rounded-[3rem] shadow-xl shadow-slate-200 border-4 border-transparent hover:border-indigo-400 cursor-pointer transition-all hover:-translate-y-2">
-                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-6">
-                  <i className="fa-solid fa-play"></i>
+          {error && (
+            <div className="bg-red-50 text-red-600 p-8 rounded-3xl mb-12 font-bold border-2 border-red-100 flex items-start gap-4">
+               <i className="fa-solid fa-circle-exclamation text-2xl mt-1"></i>
+               <div>
+                  <p className="text-lg">同步失败</p>
+                  <p className="text-sm opacity-80 mt-1">{error}</p>
+               </div>
+            </div>
+          )}
+          
+          {student?.assignedLessons.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-[3rem] border-4 border-dashed border-slate-100">
+               <i className="fa-solid fa-inbox text-slate-100 text-8xl mb-6"></i>
+               <p className="text-slate-300 font-black text-xl">目前还没有指派任何课程哦</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-8">
+              {student?.assignedLessons.map(id => (
+                <div key={id} onClick={() => {
+                  if(!db.lessons[id]) { alert("该课程内容还未指派或未同步。"); return; }
+                  setActiveLesson(db.lessons[id]);
+                  setCurrentLineIdx(0);
+                  setGameState('learning');
+                  setScore(0);
+                }} className="bg-white p-10 rounded-[3rem] shadow-xl shadow-slate-200 border-4 border-transparent hover:border-indigo-400 cursor-pointer transition-all hover:-translate-y-2 group">
+                  <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-6 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                    <i className="fa-solid fa-play text-xl"></i>
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-800 leading-tight">{db.lessons[id]?.title || '未命名的课程'}</h3>
+                  <div className="flex items-center gap-2 mt-4">
+                     <span className="text-indigo-400 font-black uppercase tracking-widest text-[10px]">点击进入复习练习</span>
+                     <i className="fa-solid fa-arrow-right text-indigo-200 group-hover:translate-x-2 transition-transform"></i>
+                  </div>
                 </div>
-                <h3 className="text-2xl font-black text-slate-800 leading-tight">{db.lessons[id]?.title}</h3>
-                <p className="text-indigo-400 font-black mt-4 uppercase tracking-widest text-[10px]">点击进入复习练习</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -160,7 +219,9 @@ const StudentView: React.FC<Props> = ({ studentId }) => {
     <div className="min-h-screen bg-indigo-600 p-8 font-sans text-white overflow-x-hidden">
       <div className="max-w-5xl mx-auto">
         <header className="flex justify-between items-center mb-12">
-           <button onClick={() => setActiveLesson(null)} className="bg-white/10 hover:bg-white/20 px-8 py-3 rounded-2xl font-black transition-all">退出</button>
+           <button onClick={() => setActiveLesson(null)} className="bg-white/10 hover:bg-white/20 px-8 py-3 rounded-2xl font-black transition-all flex items-center gap-2">
+             <i className="fa-solid fa-chevron-left"></i> 返回列表
+           </button>
            <div className="text-right">
              <p className="text-indigo-200 font-black uppercase tracking-widest text-[10px] mb-1">当前积分 SCORE</p>
              <p className="text-5xl font-black tabular-nums">{score}</p>

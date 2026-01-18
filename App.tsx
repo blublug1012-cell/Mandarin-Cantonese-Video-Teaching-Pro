@@ -17,11 +17,13 @@ const App: React.FC = () => {
     const handleHashChange = () => {
       const hash = window.location.hash;
 
+      // 增强学生端路由解析，支持带参数的 hash
       if (hash.startsWith('#/student/')) {
-        const id = hash.replace('#/student/', '');
+        const idPart = hash.replace('#/student/', '');
+        const id = idPart.split('?')[0]; // 去掉查询参数
         setStudentId(id);
         setView('student');
-      } else if (hash === '#/classroom') {
+      } else if (hash === '#/classroom' || hash.startsWith('#/classroom')) {
         try {
           const saved = localStorage.getItem('activeLesson');
           if (saved) {
@@ -34,7 +36,7 @@ const App: React.FC = () => {
         } catch (e) {
           window.location.hash = '#/teacher';
         }
-      } else if (hash === '#/teacher') {
+      } else if (hash === '#/teacher' || hash.startsWith('#/teacher')) {
         setView('teacher');
       } else if (hash === '' || hash === '#/') {
         setView('landing');

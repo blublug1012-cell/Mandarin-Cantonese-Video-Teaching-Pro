@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import YouTubePlayer from './YouTubePlayer';
 import LyricLineDisplay from './LyricLineDisplay';
@@ -9,7 +8,24 @@ interface Props {
 }
 
 const ClassroomView: React.FC<Props> = ({ lesson }) => {
-  if (!lesson) return <div className="p-20 text-center">请先从编辑台加载课程。</div>;
+  // 如果没有数据，显示提示而不是报错
+  if (!lesson || !lesson.lyrics) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-10">
+        <div className="bg-white p-10 rounded-3xl shadow-xl text-center">
+          <i className="fa-solid fa-circle-exclamation text-indigo-500 text-5xl mb-4"></i>
+          <h2 className="text-2xl font-black text-slate-800 mb-2">未找到课程数据</h2>
+          <p className="text-slate-400 mb-6">请返回编辑台并点击“保存课程”后再进入上课模式。</p>
+          <button 
+            onClick={() => window.location.hash = '#/teacher'}
+            className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold"
+          >
+            返回编辑台
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const [playing, setPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -24,7 +40,8 @@ const ClassroomView: React.FC<Props> = ({ lesson }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const active = lesson.lyrics.find(l => currentTime >= l.startTime && currentTime <= l.endTime);
+    const lyrics = lesson.lyrics || [];
+    const active = lyrics.find(l => currentTime >= l.startTime && currentTime <= l.endTime);
     if (active && active.id !== currentLine?.id) {
       setCurrentLine(active);
       const activeEl = document.getElementById(`lyric-${active.id}`);
@@ -33,8 +50,8 @@ const ClassroomView: React.FC<Props> = ({ lesson }) => {
       }
     }
 
-    // Check for questions triggered by timestamp
-    const triggeredQ = lesson.questions.find(q => Math.floor(currentTime) === q.timestamp);
+    const questions = lesson.questions || [];
+    const triggeredQ = questions.find(q => Math.floor(currentTime) === q.timestamp);
     if (triggeredQ && triggeredQ.id !== activeQuestion?.id) {
       setActiveQuestion(triggeredQ);
       setSidePanel('questions');
@@ -59,7 +76,7 @@ const ClassroomView: React.FC<Props> = ({ lesson }) => {
   };
 
   return (
-    <div className="bg-slate-100 min-h-screen flex flex-col h-screen overflow-hidden font-sans">
+    <div className="bg-slate-100 min-h-screen flex flex-col h-screen overflow-hidden font-sans no-print">
       <header className="bg-white border-b px-8 py-3 flex justify-between items-center shadow-sm z-20">
         <div className="flex items-center gap-6">
           <button 
@@ -108,9 +125,7 @@ const ClassroomView: React.FC<Props> = ({ lesson }) => {
               seekTo={seekTarget}
             />
             
-            {/* Custom Overlay Controls */}
             <div className="absolute inset-x-0 bottom-0 p-6 bg-gradient-to-t from-black/80 to-transparent pt-12 opacity-0 group-hover:opacity-100 transition-opacity">
-              {/* Custom Progress Bar with Markers */}
               <div className="relative h-2 bg-white/20 rounded-full mb-6 cursor-pointer overflow-visible" onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const percent = (e.clientX - rect.left) / rect.width;
@@ -118,7 +133,6 @@ const ClassroomView: React.FC<Props> = ({ lesson }) => {
                 setTimeout(() => setSeekTarget(undefined), 100);
               }}>
                 <div className="absolute h-full bg-indigo-500 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }}></div>
-                {/* Question Markers */}
                 {lesson.questions.map(q => (
                   <div 
                     key={q.id}
@@ -146,7 +160,7 @@ const ClassroomView: React.FC<Props> = ({ lesson }) => {
           <div className="bg-white rounded-[2.5rem] p-10 flex-1 flex flex-col justify-center items-center shadow-xl shadow-slate-200/50 relative border border-slate-100 overflow-hidden">
              <div className="absolute top-6 left-1/2 -translate-x-1/2 text-[10px] font-black tracking-[0.2em] text-indigo-200 uppercase">当前播放台词</div>
             {currentLine ? (
-              <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 w-full">
                 <LyricLineDisplay 
                   line={currentLine} 
                   onVocabClick={(v) => { setSelectedVocab(v); setPlaying(false); }} 
@@ -252,7 +266,6 @@ const ClassroomView: React.FC<Props> = ({ lesson }) => {
         </aside>
       </main>
 
-      {/* Vocab Popup Overlay */}
       {selectedVocab && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-6" onClick={() => setSelectedVocab(null)}>
           <div className="bg-white rounded-[3rem] p-12 max-w-lg w-full shadow-2xl relative animate-in zoom-in duration-300 overflow-hidden" onClick={e => e.stopPropagation()}>

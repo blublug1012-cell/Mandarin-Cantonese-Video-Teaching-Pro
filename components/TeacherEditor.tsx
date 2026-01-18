@@ -6,7 +6,6 @@ interface Props {
 }
 
 const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
-  // 安全解析数据库
   const [db, setDb] = useState<Database>(() => {
     try {
       const saved = localStorage.getItem('teaching_db');
@@ -24,7 +23,6 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
     localStorage.setItem('teacher_cloud_url', cloudBaseUrl);
   }, [cloudBaseUrl]);
 
-  // 安全解析当前课程
   const [lesson, setLesson] = useState<LessonData>(() => {
     try {
       const savedId = localStorage.getItem('last_lesson_id');
@@ -50,6 +48,7 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
     setDb(newDb);
     localStorage.setItem('teaching_db', JSON.stringify(newDb));
     localStorage.setItem('last_lesson_id', updatedLesson.id);
+    localStorage.setItem('activeLesson', JSON.stringify(updatedLesson)); 
   };
 
   const handleManualSave = () => {
@@ -61,14 +60,16 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
     window.print();
   };
 
+  // 关键改进：将 cloudUrl 编码到链接中
   const getStudentUrl = (id: string) => {
     const baseUrl = window.location.origin + window.location.pathname;
-    return `${baseUrl}#/student/${id}`;
+    const cloudParam = cloudBaseUrl ? `?c=${encodeURIComponent(btoa(cloudBaseUrl))}` : '';
+    return `${baseUrl}#/student/${id}${cloudParam}`;
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    alert('链接已复制到剪贴板');
+    alert('链接已复制到剪贴板，请发送给学生。链接中已包含云端同步配置。');
   };
 
   const exportStudentPackage = (studentId: string) => {
@@ -293,24 +294,23 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
         </div>
       </main>
 
-      {/* 打印专用区域 */}
       <div className="print-section p-10">
         <div className="text-center mb-16">
           <h1 className="text-5xl font-bold mb-4">{lesson.title}</h1>
           <p className="text-slate-400 text-xl font-medium tracking-widest uppercase">学习讲义 / STUDY HANDOUT</p>
         </div>
-        {lesson.lyrics.map((line, idx) => (
+        {(lesson.lyrics || []).map((line, idx) => (
           <div key={line.id} className="lyric-item mb-12 pb-8">
             <div className="flex flex-wrap gap-x-12 gap-y-16 mb-10">
-              {Array.from(line.chinese.replace(/\s/g,'')).map((c, i) => (
+              {Array.from((line.chinese || '').replace(/\s/g,'')).map((c, i) => (
                 <div key={i} className="flex flex-col items-center">
-                  <span className="text-lg text-slate-400 font-bold mb-2 uppercase tracking-tighter">{line.pinyin.split(/\s+/)[i] || ''}</span>
+                  <span className="text-lg text-slate-400 font-bold mb-2 uppercase tracking-tighter">{(line.pinyin || '').split(/\s+/)[i] || ''}</span>
                   <span className="text-6xl font-bold pb-2">{c}</span>
                 </div>
               ))}
             </div>
             <p className="italic text-slate-500 text-3xl mb-8">"{line.english}"</p>
-            {line.vocabs.length > 0 && (
+            {line.vocabs && line.vocabs.length > 0 && (
               <div className="grid grid-cols-2 gap-6 bg-slate-50 p-8 rounded-3xl">
                 {line.vocabs.map((v, vi) => (
                   <div key={vi} className="text-xl">
@@ -326,7 +326,7 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
       </div>
 
       {showBatchModal && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-6">
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-6 no-print">
            <div className="bg-white rounded-[3rem] p-12 max-w-2xl w-full shadow-2xl">
               <h3 className="text-3xl font-black text-slate-800 mb-2">批量导入文本</h3>
               <p className="text-slate-400 mb-8 font-medium">每行文字自动生成一个句段。</p>
