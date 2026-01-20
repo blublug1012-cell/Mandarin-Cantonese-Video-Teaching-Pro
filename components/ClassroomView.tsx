@@ -52,34 +52,61 @@ const ClassroomView: React.FC<Props> = ({ lesson: initialLesson }) => {
 
   if (!lesson) return null;
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
     <div className="bg-slate-50 min-h-screen flex flex-col h-screen overflow-hidden font-sans no-print">
+      {/* 打印专用区域 */}
+      <div className="print-section fixed inset-0 bg-white z-[999] p-10 hidden print:block overflow-visible">
+        <h1 className="text-3xl font-black mb-10 text-center border-b pb-4">{lesson.title} - 课堂讲义</h1>
+        <div className="space-y-12">
+          {lesson.lyrics.map((l, i) => (
+            <div key={l.id} className="lyric-item flex flex-col gap-2">
+              <div className="flex flex-wrap gap-x-6 gap-y-4">
+                {[...l.chinese].map((char, ci) => (
+                  <div key={ci} className="flex flex-col items-center">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">{l.pinyin.split(' ')[ci] || ''}</span>
+                    <span className="text-3xl font-bold">{char}</span>
+                  </div>
+                ))}
+              </div>
+              {l.english && <p className="text-slate-500 italic text-sm mt-2 border-l-4 border-slate-200 pl-4">"{l.english}"</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+
       <header className="bg-white border-b px-8 py-3 flex justify-between items-center shadow-sm z-20">
         <div className="flex items-center gap-6">
           <button onClick={() => window.location.hash = '#/teacher'} className="w-10 h-10 bg-slate-100 border rounded-xl flex items-center justify-center text-slate-400 hover:text-indigo-600 transition-all">
             <i className="fa-solid fa-arrow-left"></i>
           </button>
-          <div>
+          <div className="hidden sm:block">
             <h2 className="font-black text-slate-800 text-lg">{lesson.title}</h2>
             <span className="text-[10px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest bg-indigo-100 text-indigo-600">上课模式</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 md:gap-4">
+          <button onClick={handlePrint} className="w-10 h-10 md:w-auto md:px-4 md:py-2 bg-white border-2 border-slate-100 text-slate-500 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all" title="打印讲义">
+            <i className="fa-solid fa-file-pdf"></i> <span className="hidden md:inline text-sm">打印</span>
+          </button>
           <div className="flex bg-slate-100 p-1 rounded-xl border">
-            <button onClick={() => setShowPinyin(!showPinyin)} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${showPinyin ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}>拼音</button>
-            <button onClick={() => setShowEnglish(!showEnglish)} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${showEnglish ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}>英文</button>
+            <button onClick={() => setShowPinyin(!showPinyin)} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${showPinyin ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}>拼</button>
+            <button onClick={() => setShowEnglish(!showEnglish)} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${showEnglish ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}>英</button>
           </div>
-          <div className="h-6 w-[1px] bg-slate-200"></div>
-          <div className="flex bg-slate-100 p-1 rounded-xl border">
-            {[0.5, 0.75, 1, 1.25, 1.5].map(rate => (
+          <div className="h-6 w-[1px] bg-slate-200 hidden md:block"></div>
+          <div className="hidden lg:flex bg-slate-100 p-1 rounded-xl border">
+            {[0.75, 1, 1.25].map(rate => (
               <button key={rate} onClick={() => setPlaybackRate(rate)} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${playbackRate === rate ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{rate}x</button>
             ))}
           </div>
         </div>
       </header>
 
-      <main className="flex-1 flex overflow-hidden p-6 gap-6">
+      <main className="flex-1 flex overflow-hidden p-6 gap-6 flex-col lg:flex-row">
         <div className="flex-[2] flex flex-col gap-6 overflow-hidden">
           <div className="bg-black rounded-[3rem] overflow-hidden shadow-2xl relative aspect-video group border-4 border-white">
             <YouTubePlayer 
@@ -108,7 +135,7 @@ const ClassroomView: React.FC<Props> = ({ lesson: initialLesson }) => {
           </div>
         </div>
 
-        <aside className="w-[420px] bg-white rounded-[3rem] shadow-xl border border-slate-100 flex flex-col overflow-hidden">
+        <aside className="lg:w-[420px] bg-white rounded-[3rem] shadow-xl border border-slate-100 flex flex-col overflow-hidden min-h-0">
           <div className="p-6 border-b flex gap-3">
              <button onClick={() => setSidePanel('lyrics')} className={`flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${sidePanel === 'lyrics' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400'}`}>剧本</button>
              <button onClick={() => setSidePanel('questions')} className={`flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${sidePanel === 'questions' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400'}`}>练习</button>

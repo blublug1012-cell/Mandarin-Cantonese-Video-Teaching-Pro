@@ -24,6 +24,7 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
       const savedId = localStorage.getItem('last_lesson_id');
       if (savedId && db.lessons[savedId]) return db.lessons[savedId];
     } catch (e) {}
+    // 默认空课程
     return {
       id: Date.now().toString(),
       title: '新课程',
@@ -40,25 +41,67 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [newStudentName, setNewStudentName] = useState('');
 
+  // 自动保存逻辑
+  useEffect(() => {
+    localStorage.setItem('activeLesson', JSON.stringify(lesson));
+  }, [lesson]);
+
   const saveToDb = (updatedLesson: LessonData, updatedDb?: Database) => {
     const finalDb = updatedDb || { ...db, lessons: { ...db.lessons, [updatedLesson.id]: updatedLesson } };
     setDb(finalDb);
     localStorage.setItem('teaching_db', JSON.stringify(finalDb));
     localStorage.setItem('last_lesson_id', updatedLesson.id);
-    localStorage.setItem('activeLesson', JSON.stringify(updatedLesson)); 
   };
 
-  const toggleAllHomework = (select: boolean) => {
-    const updated = {
-      ...lesson,
-      lyrics: lesson.lyrics.map(l => ({ ...l, isHomework: select }))
-    };
-    setLesson(updated);
+  const handleNewLesson = () => {
+    if (confirm('确认创建一个全新的课程吗？当前更改会自动保存。')) {
+      saveToDb(lesson); // 先保存旧的
+      const newLesson: LessonData = {
+        id: Date.now().toString(),
+        title: '未命名课程',
+        videoUrl: '',
+        language: 'Mandarin',
+        lyrics: [],
+        questions: [],
+        lastModified: Date.now()
+      };
+      setLesson(newLesson);
+      setActiveTab('info');
+    }
+  };
+
+  const switchLesson = (id: string) => {
+    if (db.lessons[id]) {
+      saveToDb(lesson); // 先保存当前的
+      setLesson(db.lessons[id]);
+      localStorage.setItem('last_lesson_id', id);
+    }
+  };
+
+  const deleteCurrentLesson = () => {
+    if (Object.keys(db.lessons).length <= 1) {
+      alert('至少需要保留一个课程。');
+      return;
+    }
+    if (confirm(`确定要永久删除课程《${lesson.title}》吗？此操作不可撤销。`)) {
+      const newLessons = { ...db.lessons };
+      delete newLessons[lesson.id];
+      const nextId = Object.keys(newLessons)[0];
+      const updatedDb = { ...db, lessons: newLessons };
+      setDb(updatedDb);
+      localStorage.setItem('teaching_db', JSON.stringify(updatedDb));
+      setLesson(newLessons[nextId]);
+      localStorage.setItem('last_lesson_id', nextId);
+    }
   };
 
   const handleManualSave = () => {
     saveToDb(lesson);
     alert('✅ 课程内容已成功保存！');
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   const addStudent = () => {
@@ -118,31 +161,82 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
     }
   };
 
+  // Fix: Added toggleAllHomework function to handle batch setting of homework status
+  const toggleAllHomework = (status: boolean) => {
+    setLesson({
+      ...lesson,
+      lyrics: lesson.lyrics.map(l => ({ ...l, isHomework: status }))
+    });
+  };
+
   return (
     <div className="bg-slate-50 min-h-screen pb-20 font-sans relative">
-      <header className="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm no-print">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-             <i className="fa-solid fa-chalkboard-user"></i>
-          </div>
-          <h1 className="font-black text-slate-800 tracking-tight">Mandarin/Cantonese Teaching Pro</h1>
+      {/* 打印专用区域 */}
+      <div className="print-section fixed inset-0 bg-white z-[999] p-10 hidden print:block overflow-visible">
+        <h1 className="text-3xl font-black mb-10 text-center border-b pb-4">{lesson.title} - 学习资料</h1>
+        <div className="space-y-12">
+          {lesson.lyrics.map((l, i) => (
+            <div key={l.id} className="lyric-item flex flex-col gap-2">
+              <div className="flex flex-wrap gap-x-6 gap-y-4">
+                {l.chinese.split('').map((char, ci) => (
+                  <div key={ci} className="flex flex-col items-center">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">{l.pinyin.split(' ')[ci] || ''}</span>
+                    <span className="text-3xl font-bold">{char}</span>
+                  </div>
+                ))}
+              </div>
+              {l.english && <p className="text-slate-500 italic text-sm mt-2 border-l-4 border-slate-200 pl-4">"{l.english}"</p>}
+            </div>
+          ))}
         </div>
-        <div className="flex gap-3">
+      </div>
+
+      <header className="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm no-print">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+               <i className="fa-solid fa-chalkboard-user"></i>
+            </div>
+            <h1 className="font-black text-slate-800 tracking-tight hidden md:block">Teaching Pro</h1>
+          </div>
+          
+          <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
+          
+          <div className="flex items-center gap-3">
+             <select 
+               value={lesson.id} 
+               onChange={(e) => switchLesson(e.target.value)}
+               className="bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-sm text-slate-700 outline-none focus:ring-2 ring-indigo-500 max-w-[200px]"
+             >
+                {Object.values(db.lessons).map(l => (
+                  <option key={l.id} value={l.id}>{l.title}</option>
+                ))}
+             </select>
+             <button onClick={handleNewLesson} className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-100 transition-all" title="新建课程">
+               <i className="fa-solid fa-plus"></i>
+             </button>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={handlePrint} className="bg-white border-2 border-slate-100 text-slate-600 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-50 text-sm transition-colors">
+            <i className="fa-solid fa-file-pdf"></i> <span className="hidden md:inline">打印资料</span>
+          </button>
           <button onClick={handleManualSave} className="bg-emerald-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-600 text-sm transition-colors">
-            <i className="fa-solid fa-save"></i> 保存
+            <i className="fa-solid fa-save"></i> <span className="hidden md:inline">保存</span>
           </button>
           <button onClick={() => { saveToDb(lesson); onOpenClassroom(lesson); }} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 text-sm transition-colors">
-            <i className="fa-solid fa-play"></i> 上课模式
+            <i className="fa-solid fa-play"></i> <span className="hidden md:inline">上课</span>
           </button>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto mt-8 px-6 no-print">
-        <nav className="flex gap-2 mb-8 justify-center bg-white p-2 rounded-3xl shadow-sm border border-slate-100 w-fit mx-auto">
+        <nav className="flex gap-2 mb-8 justify-center bg-white p-2 rounded-3xl shadow-sm border border-slate-100 w-fit mx-auto overflow-x-auto max-w-full">
           {(['info', 'lyrics', 'questions', 'students'] as const).map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-8 py-3 rounded-2xl font-bold text-sm transition-all ${activeTab === tab ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 rounded-2xl font-bold text-sm transition-all whitespace-nowrap ${activeTab === tab ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
               {tab === 'info' && '1. 课程设置'}
-              {tab === 'lyrics' && '2. 内容编辑'}
+              {tab === 'lyrics' && '2. 台词编辑'}
               {tab === 'questions' && '3. 互动习题'}
               {tab === 'students' && '4. 学生管理'}
             </button>
@@ -152,12 +246,12 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
         <div className="bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 min-h-[60vh]">
           {activeTab === 'lyrics' && (
             <div className="space-y-12">
-              <div className="flex justify-between items-center bg-indigo-50 p-6 rounded-3xl border border-indigo-100">
+              <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-indigo-50 p-6 rounded-3xl border border-indigo-100">
                 <div className="flex items-center gap-3">
                   <i className="fa-solid fa-lightbulb text-indigo-400"></i>
                   <p className="text-indigo-600 text-xs font-bold uppercase tracking-wider">设置视频时间段（秒），勾选作业即会同步给学生。</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap justify-center">
                   <button onClick={() => toggleAllHomework(true)} className="bg-white border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-xs font-black hover:bg-indigo-50 transition-colors">全选作业</button>
                   <button onClick={() => toggleAllHomework(false)} className="bg-white border border-slate-200 text-slate-400 px-4 py-2 rounded-xl text-xs font-black hover:bg-slate-50 transition-colors">取消全选</button>
                   <button onClick={() => setShowBatchModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-black shadow-sm transition-colors">批量导入</button>
@@ -165,25 +259,25 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
               </div>
 
               {lesson.lyrics.map((line, idx) => (
-                <div key={line.id} className="flex gap-8 relative pb-10 border-b border-slate-50 last:border-0 group transition-all">
-                  <div className="w-32 flex flex-col items-center gap-4">
+                <div key={line.id} className="flex flex-col md:flex-row gap-8 relative pb-10 border-b border-slate-50 last:border-0 group transition-all">
+                  <div className="w-full md:w-32 flex flex-row md:flex-col items-center gap-4">
                     <span className="text-4xl font-black text-slate-100 italic">#{idx + 1}</span>
-                    <div className="space-y-4 w-full">
-                      <div className="relative">
-                        <label className="text-[9px] font-black text-slate-400 absolute -top-4 left-1 uppercase">开始秒数</label>
+                    <div className="flex md:flex-col gap-2 flex-1 md:w-full">
+                      <div className="relative flex-1">
+                        <label className="text-[9px] font-black text-slate-400 absolute -top-4 left-1 uppercase">开始</label>
                         <input type="number" step="0.1" className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-center text-sm font-black" value={line.startTime} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, startTime: Number(e.target.value)} : l)})} />
                       </div>
-                      <div className="relative">
-                        <label className="text-[9px] font-black text-slate-400 absolute -top-4 left-1 uppercase">结束秒数</label>
+                      <div className="relative flex-1">
+                        <label className="text-[9px] font-black text-slate-400 absolute -top-4 left-1 uppercase">结束</label>
                         <input type="number" step="0.1" className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 text-center text-sm font-black" value={line.endTime} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, endTime: Number(e.target.value)} : l)})} />
                       </div>
                     </div>
                   </div>
 
                   <div className="flex-1 space-y-4">
-                    <div className="flex justify-between items-start gap-4">
-                      <input className="flex-1 text-3xl font-black text-slate-800 placeholder-slate-100 focus:outline-none" placeholder="输入中文句子..." value={line.chinese} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, chinese: e.target.value} : l)})} />
-                      <div className="flex items-center gap-2">
+                    <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+                      <input className="flex-1 w-full text-2xl md:text-3xl font-black text-slate-800 placeholder-slate-100 focus:outline-none" placeholder="输入中文句子..." value={line.chinese} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, chinese: e.target.value} : l)})} />
+                      <div className="flex items-center gap-2 self-end md:self-auto">
                         <label className={`flex items-center gap-2 px-4 py-2 rounded-2xl cursor-pointer transition-all border-2 ${line.isHomework ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-slate-50 border-slate-100 text-slate-300'}`}>
                           <input type="checkbox" checked={line.isHomework} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, isHomework: e.target.checked} : l)})} className="w-5 h-5 accent-indigo-600" />
                           <span className="text-xs font-black uppercase whitespace-nowrap">选为作业</span>
@@ -217,6 +311,29 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
             </div>
           )}
 
+          {activeTab === 'info' && (
+            <div className="space-y-12 max-w-xl mx-auto py-10">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">课程标题</label>
+                <input className="w-full p-5 bg-slate-50 rounded-2xl text-xl font-black outline-none border-2 border-transparent focus:border-indigo-400" value={lesson.title} onChange={(e) => setLesson({...lesson, title: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">YouTube 视频 URL</label>
+                <input className="w-full p-5 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-indigo-400 font-mono text-indigo-600" value={lesson.videoUrl} onChange={(e) => setLesson({...lesson, videoUrl: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">GitHub Pages 同步地址</label>
+                <input className="w-full p-5 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-indigo-400 font-mono text-xs" placeholder="https://username.github.io/repo-name/" value={cloudBaseUrl} onChange={(e) => setCloudBaseUrl(e.target.value)} />
+              </div>
+              
+              <div className="pt-10 border-t">
+                <button onClick={deleteCurrentLesson} className="w-full py-4 bg-red-50 text-red-400 rounded-2xl font-black text-sm hover:bg-red-100 hover:text-red-600 transition-all">
+                   <i className="fa-solid fa-trash-can mr-2"></i> 删除当前课程
+                </button>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'questions' && (
             <div className="space-y-8 py-6">
               <div className="flex justify-between items-center">
@@ -236,7 +353,7 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                         <input className="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold" placeholder="例如：刚才视频里提到了什么？" value={q.question} onChange={(e) => setLesson({...lesson, questions: lesson.questions.map(item => item.id === q.id ? {...item, question: e.target.value} : item)})} />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {q.options.map((opt, oIdx) => (
                         <div key={oIdx} className="flex items-center gap-3">
                           <button onClick={() => setLesson({...lesson, questions: lesson.questions.map(item => item.id === q.id ? {...item, correctIndex: oIdx} : item)})} className={`w-10 h-10 rounded-xl font-black border-2 flex items-center justify-center transition-all ${q.correctIndex === oIdx ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-300 border-slate-100 hover:border-indigo-200'}`}>
@@ -246,7 +363,7 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                         </div>
                       ))}
                     </div>
-                    <button onClick={() => setLesson({...lesson, questions: lesson.questions.filter(item => item.id !== q.id)})} className="absolute -top-3 -right-3 w-10 h-10 bg-white shadow-lg rounded-full text-red-400 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                    <button onClick={() => setLesson({...lesson, questions: lesson.questions.filter(item => item.id !== q.id)})} className="absolute -top-3 -right-3 w-10 h-10 bg-white shadow-lg rounded-full text-red-400 hover:text-red-600 flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
                       <i className="fa-solid fa-trash-can text-sm"></i>
                     </button>
                   </div>
@@ -259,7 +376,7 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
             <div className="space-y-12 py-6">
               <div className="bg-indigo-50 p-8 rounded-[3rem] border border-indigo-100">
                 <h3 className="text-xl font-black text-indigo-900 mb-6">新增学生</h3>
-                <div className="flex gap-4">
+                <div className="flex flex-col md:flex-row gap-4">
                   <input className="flex-1 p-5 bg-white rounded-[1.5rem] border-2 border-transparent focus:border-indigo-400 outline-none font-bold" placeholder="输入学生姓名..." value={newStudentName} onChange={(e) => setNewStudentName(e.target.value)} />
                   <button onClick={addStudent} className="bg-indigo-600 text-white px-10 py-5 rounded-[1.5rem] font-black shadow-lg hover:bg-indigo-700 active:scale-95 transition-all">添加并同步</button>
                 </div>
@@ -270,8 +387,8 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                 <div className="grid gap-6">
                   {db.students.map(s => (
                     <div key={s.id} className="bg-white border border-slate-100 p-8 rounded-[3rem] shadow-sm hover:shadow-md transition-all space-y-6">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-4">
+                      <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+                        <div className="flex items-center gap-4 self-start">
                           <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 text-2xl font-black uppercase">
                             {s.name.charAt(0)}
                           </div>
@@ -280,12 +397,12 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                             <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">ID: {s.id}</p>
                           </div>
                         </div>
-                        <div className="flex gap-3">
+                        <div className="flex gap-3 w-full md:w-auto">
                           <button onClick={() => {
                             navigator.clipboard.writeText(getStudentUrl(s.id));
                             alert('专属链接已复制，请发送给学生！');
-                          }} className="bg-indigo-50 text-indigo-600 px-6 py-3 rounded-2xl font-black text-sm flex items-center gap-2 hover:bg-indigo-100 transition-all">
-                            <i className="fa-solid fa-link"></i> 复制专属链接
+                          }} className="flex-1 md:flex-initial bg-indigo-50 text-indigo-600 px-6 py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-indigo-100 transition-all">
+                            <i className="fa-solid fa-link"></i> 复制链接
                           </button>
                           <button onClick={() => {
                              if(confirm(`确定删除学生 ${s.name} 吗？`)) {
@@ -314,31 +431,14 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
               </div>
             </div>
           )}
-
-          {activeTab === 'info' && (
-            <div className="space-y-8 max-w-xl mx-auto py-10">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">课程标题</label>
-                <input className="w-full p-5 bg-slate-50 rounded-2xl text-xl font-black outline-none border-2 border-transparent focus:border-indigo-400" value={lesson.title} onChange={(e) => setLesson({...lesson, title: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">YouTube 视频 URL</label>
-                <input className="w-full p-5 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-indigo-400 font-mono text-indigo-600" value={lesson.videoUrl} onChange={(e) => setLesson({...lesson, videoUrl: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">GitHub Pages 同步地址</label>
-                <input className="w-full p-5 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-indigo-400 font-mono text-xs" placeholder="https://username.github.io/repo-name/" value={cloudBaseUrl} onChange={(e) => setCloudBaseUrl(e.target.value)} />
-              </div>
-            </div>
-          )}
         </div>
       </main>
 
       {showBatchModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-6 no-print">
-           <div className="bg-white rounded-[3rem] p-12 max-w-2xl w-full shadow-2xl">
+           <div className="bg-white rounded-[3rem] p-8 md:p-12 max-w-2xl w-full shadow-2xl">
               <h3 className="text-3xl font-black text-slate-800 mb-2">批量导入文本</h3>
-              <p className="text-slate-400 mb-8 font-medium">每行文字自动生成一个句段。</p>
+              <p className="text-slate-400 mb-8 font-medium text-sm">每行文字自动生成一个句段。</p>
               <textarea className="w-full h-72 p-8 bg-slate-50 rounded-[2rem] border-2 border-slate-100 focus:outline-none focus:border-indigo-400 font-medium text-lg" placeholder="在此粘贴多行文本..." value={batchText} onChange={(e) => setBatchText(e.target.value)}></textarea>
               <div className="flex gap-4 mt-10">
                  <button onClick={() => setShowBatchModal(false)} className="flex-1 py-5 bg-slate-100 rounded-2xl font-bold text-slate-500 transition-colors">取消</button>
