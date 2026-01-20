@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { LyricLine, Vocab } from '../types';
 
@@ -16,18 +17,23 @@ const LyricLineDisplay: React.FC<Props> = ({ line, showPinyin = true, showEnglis
     const chinese = line.chinese.replace(/\s+/g, '');
     const vocabs = line.vocabs || [];
     let result: { text: string; pinyin: string; isVocab: boolean }[] = [];
-    let currentIndex = 0;
 
-    // 简单匹配算法：按顺序查找词汇
+    // 获取拼音数组
     const pinyins = line.pinyin.split(/\s+/).filter(p => p.length > 0);
     
     // 如果没有配置拼音，回退到普通字符处理
     if (pinyins.length === 0) {
-      return Array.from(chinese).map(c => ({ text: c, pinyin: '', isVocab: false }));
+      // Fix: Use spread operator to ensure characters are correctly inferred as strings
+      return [...chinese].map(c => ({ text: c, pinyin: '', isVocab: false }));
     }
 
-    Array.from(chinese).forEach((char, i) => {
-      result.push({ text: char, pinyin: pinyins[i] || '', isVocab: vocabs.some(v => v.char.includes(char)) });
+    // Fix: Use spread operator to ensure characters are correctly inferred as strings
+    [...chinese].forEach((char, i) => {
+      result.push({ 
+        text: char, 
+        pinyin: pinyins[i] || '', 
+        isVocab: (vocabs || []).some(v => v.char.includes(char)) 
+      });
     });
 
     return result;
@@ -36,12 +42,12 @@ const LyricLineDisplay: React.FC<Props> = ({ line, showPinyin = true, showEnglis
   const units = getUnits();
 
   return (
-    <div className="flex flex-col items-center w-full max-w-full overflow-hidden py-6 px-4">
-      <div className="flex flex-wrap justify-center gap-x-8 gap-y-12 mb-10 w-full">
+    <div className="flex flex-col items-center w-full max-w-full overflow-hidden py-4 px-2">
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-6 mb-6 w-full">
         {units.map((unit, i) => (
           <div 
             key={i} 
-            className={`flex flex-col items-center transition-all duration-300 ${unit.isVocab ? 'text-indigo-600 scale-110 cursor-pointer' : 'text-slate-800'}`}
+            className={`flex flex-col items-center transition-all duration-300 ${unit.isVocab ? 'text-indigo-600 scale-105 cursor-pointer' : 'text-slate-800'}`}
             onClick={() => {
               if (unit.isVocab) {
                 const found = line.vocabs.find(v => v.char.includes(unit.text));
@@ -49,19 +55,19 @@ const LyricLineDisplay: React.FC<Props> = ({ line, showPinyin = true, showEnglis
               }
             }}
           >
-            <span className={`text-sm font-black text-slate-300 mb-2 uppercase tracking-tighter transition-opacity duration-300 ${showPinyin ? 'opacity-100' : 'opacity-0'}`}>
+            <span className={`text-[10px] font-black text-slate-300 mb-1 uppercase tracking-tighter transition-opacity duration-300 h-3 ${showPinyin ? 'opacity-100' : 'opacity-0'}`}>
               {unit.pinyin}
             </span>
-            <span className="text-6xl font-black tracking-normal relative leading-[1.1]">
+            <span className="text-4xl md:text-5xl font-black tracking-normal relative leading-tight">
               {unit.text}
-              {unit.isVocab && <div className="absolute -bottom-2 left-0 right-0 h-1.5 bg-indigo-500/30 rounded-full"></div>}
+              {unit.isVocab && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-500/30 rounded-full"></div>}
             </span>
           </div>
         ))}
       </div>
       {showEnglish && line.english && (
-        <div className="max-w-2xl text-center animate-in fade-in slide-in-from-top-2 duration-500">
-          <p className="text-slate-400 text-xl font-bold italic border-t border-slate-100 pt-6">
+        <div className="max-w-xl text-center animate-in fade-in slide-in-from-top-2 duration-500">
+          <p className="text-slate-400 text-sm md:text-base font-bold italic border-t border-slate-50 pt-3">
             "{line.english}"
           </p>
         </div>

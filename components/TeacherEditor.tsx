@@ -109,6 +109,15 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
     return `${baseUrl}#/student/${id}${cloudParam}`;
   };
 
+  const deleteLyricLine = (id: string) => {
+    if (confirm('确定要删除这一行吗？')) {
+      setLesson({
+        ...lesson,
+        lyrics: lesson.lyrics.filter(l => l.id !== id)
+      });
+    }
+  };
+
   return (
     <div className="bg-slate-50 min-h-screen pb-20 font-sans relative">
       <header className="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm no-print">
@@ -119,10 +128,10 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
           <h1 className="font-black text-slate-800 tracking-tight">Mandarin/Cantonese Teaching Pro</h1>
         </div>
         <div className="flex gap-3">
-          <button onClick={handleManualSave} className="bg-emerald-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-600 text-sm">
+          <button onClick={handleManualSave} className="bg-emerald-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-600 text-sm transition-colors">
             <i className="fa-solid fa-save"></i> 保存
           </button>
-          <button onClick={() => { saveToDb(lesson); onOpenClassroom(lesson); }} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 text-sm">
+          <button onClick={() => { saveToDb(lesson); onOpenClassroom(lesson); }} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 text-sm transition-colors">
             <i className="fa-solid fa-play"></i> 上课模式
           </button>
         </div>
@@ -149,14 +158,14 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                   <p className="text-indigo-600 text-xs font-bold uppercase tracking-wider">设置视频时间段（秒），勾选作业即会同步给学生。</p>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => toggleAllHomework(true)} className="bg-white border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-xs font-black hover:bg-indigo-50">全选作业</button>
-                  <button onClick={() => toggleAllHomework(false)} className="bg-white border border-slate-200 text-slate-400 px-4 py-2 rounded-xl text-xs font-black hover:bg-slate-50">取消全选</button>
-                  <button onClick={() => setShowBatchModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-black shadow-sm">批量导入</button>
+                  <button onClick={() => toggleAllHomework(true)} className="bg-white border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-xs font-black hover:bg-indigo-50 transition-colors">全选作业</button>
+                  <button onClick={() => toggleAllHomework(false)} className="bg-white border border-slate-200 text-slate-400 px-4 py-2 rounded-xl text-xs font-black hover:bg-slate-50 transition-colors">取消全选</button>
+                  <button onClick={() => setShowBatchModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-black shadow-sm transition-colors">批量导入</button>
                 </div>
               </div>
 
               {lesson.lyrics.map((line, idx) => (
-                <div key={line.id} className="flex gap-8 relative pb-10 border-b border-slate-50 last:border-0 group">
+                <div key={line.id} className="flex gap-8 relative pb-10 border-b border-slate-50 last:border-0 group transition-all">
                   <div className="w-32 flex flex-col items-center gap-4">
                     <span className="text-4xl font-black text-slate-100 italic">#{idx + 1}</span>
                     <div className="space-y-4 w-full">
@@ -174,10 +183,19 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                   <div className="flex-1 space-y-4">
                     <div className="flex justify-between items-start gap-4">
                       <input className="flex-1 text-3xl font-black text-slate-800 placeholder-slate-100 focus:outline-none" placeholder="输入中文句子..." value={line.chinese} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, chinese: e.target.value} : l)})} />
-                      <label className={`flex items-center gap-2 px-4 py-2 rounded-2xl cursor-pointer transition-all border-2 ${line.isHomework ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-slate-50 border-slate-100 text-slate-300'}`}>
-                        <input type="checkbox" checked={line.isHomework} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, isHomework: e.target.checked} : l)})} className="w-5 h-5 accent-indigo-600" />
-                        <span className="text-xs font-black uppercase whitespace-nowrap">选为作业</span>
-                      </label>
+                      <div className="flex items-center gap-2">
+                        <label className={`flex items-center gap-2 px-4 py-2 rounded-2xl cursor-pointer transition-all border-2 ${line.isHomework ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-slate-50 border-slate-100 text-slate-300'}`}>
+                          <input type="checkbox" checked={line.isHomework} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, isHomework: e.target.checked} : l)})} className="w-5 h-5 accent-indigo-600" />
+                          <span className="text-xs font-black uppercase whitespace-nowrap">选为作业</span>
+                        </label>
+                        <button 
+                          onClick={() => deleteLyricLine(line.id)} 
+                          className="bg-red-50 text-red-400 p-2.5 rounded-2xl border-2 border-red-100 hover:bg-red-100 hover:text-red-600 transition-all flex items-center justify-center"
+                          title="删除此句"
+                        >
+                          <i className="fa-solid fa-trash-can"></i>
+                        </button>
+                      </div>
                     </div>
                     <input className="w-full text-lg text-slate-400 placeholder-slate-200 focus:outline-none font-medium" placeholder="Pinyin/Jyutping (空格分隔)..." value={line.pinyin} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, pinyin: e.target.value} : l)})} />
                     
@@ -187,13 +205,12 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                           <input placeholder="字" className="w-8 font-bold border-r outline-none bg-transparent" value={v.char} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, vocabs: l.vocabs.map((v_old, i) => i === vIdx ? {...v_old, char: e.target.value} : v_old)} : l)})} />
                           <input placeholder="拼音" className="w-14 border-r outline-none bg-transparent" value={v.pinyin} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, vocabs: l.vocabs.map((v_old, i) => i === vIdx ? {...v_old, pinyin: e.target.value} : v_old)} : l)})} />
                           <input placeholder="释义" className="w-24 outline-none bg-transparent" value={v.explanation} onChange={(e) => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, vocabs: l.vocabs.map((v_old, i) => i === vIdx ? {...v_old, explanation: e.target.value} : v_old)} : l)})} />
-                          <button onClick={() => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, vocabs: l.vocabs.filter((_, i) => i !== vIdx)} : l)})} className="text-slate-300 hover:text-red-400"><i className="fa-solid fa-times"></i></button>
+                          <button onClick={() => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, vocabs: l.vocabs.filter((_, i) => i !== vIdx)} : l)})} className="text-slate-300 hover:text-red-400 transition-colors"><i className="fa-solid fa-times"></i></button>
                         </div>
                       ))}
-                      <button onClick={() => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, vocabs: [...l.vocabs, { char: '', pinyin: '', explanation: '' }]} : l)})} className="px-4 py-2 border-2 border-dashed border-slate-100 rounded-xl text-slate-300 text-[10px] font-bold hover:text-indigo-400">+ 添加重点词</button>
+                      <button onClick={() => setLesson({...lesson, lyrics: lesson.lyrics.map(l => l.id === line.id ? {...l, vocabs: [...l.vocabs, { char: '', pinyin: '', explanation: '' }]} : l)})} className="px-4 py-2 border-2 border-dashed border-slate-100 rounded-xl text-slate-300 text-[10px] font-bold hover:text-indigo-400 transition-colors">+ 添加重点词</button>
                     </div>
                   </div>
-                  <button onClick={() => setLesson({...lesson, lyrics: lesson.lyrics.filter(l => l.id !== line.id)})} className="absolute top-0 right-[-3rem] text-slate-100 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><i className="fa-solid fa-trash-can"></i></button>
                 </div>
               ))}
               <button onClick={() => setLesson({...lesson, lyrics: [...lesson.lyrics, { id: Date.now().toString(), startTime: 0, endTime: 0, chinese: '', pinyin: '', english: '', vocabs: [], isHomework: false }]})} className="w-full py-10 border-2 border-dashed border-slate-100 rounded-[2.5rem] text-slate-200 font-black text-xl hover:bg-slate-50 transition-all">+ 添加新句段</button>
@@ -208,7 +225,7 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
               </div>
               <div className="grid gap-6">
                 {(lesson.questions || []).map((q, idx) => (
-                  <div key={q.id} className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-6 relative group">
+                  <div key={q.id} className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-6 relative group transition-all">
                     <div className="flex gap-6">
                       <div className="w-24">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">触发时间(秒)</label>
@@ -229,7 +246,7 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                         </div>
                       ))}
                     </div>
-                    <button onClick={() => setLesson({...lesson, questions: lesson.questions.filter(item => item.id !== q.id)})} className="absolute -top-3 -right-3 w-10 h-10 bg-white shadow-lg rounded-full text-red-400 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => setLesson({...lesson, questions: lesson.questions.filter(item => item.id !== q.id)})} className="absolute -top-3 -right-3 w-10 h-10 bg-white shadow-lg rounded-full text-red-400 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
                       <i className="fa-solid fa-trash-can text-sm"></i>
                     </button>
                   </div>
@@ -271,8 +288,10 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                             <i className="fa-solid fa-link"></i> 复制专属链接
                           </button>
                           <button onClick={() => {
-                             const updatedDb = { ...db, students: db.students.filter(std => std.id !== s.id) };
-                             saveToDb(lesson, updatedDb);
+                             if(confirm(`确定删除学生 ${s.name} 吗？`)) {
+                               const updatedDb = { ...db, students: db.students.filter(std => std.id !== s.id) };
+                               saveToDb(lesson, updatedDb);
+                             }
                           }} className="text-slate-300 hover:text-red-400 p-3 transition-all">
                             <i className="fa-solid fa-trash-can"></i>
                           </button>
@@ -307,7 +326,7 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
                 <input className="w-full p-5 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-indigo-400 font-mono text-indigo-600" value={lesson.videoUrl} onChange={(e) => setLesson({...lesson, videoUrl: e.target.value})} />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">GitHub Pages 同步地址 (同步作业用)</label>
+                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">GitHub Pages 同步地址</label>
                 <input className="w-full p-5 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-indigo-400 font-mono text-xs" placeholder="https://username.github.io/repo-name/" value={cloudBaseUrl} onChange={(e) => setCloudBaseUrl(e.target.value)} />
               </div>
             </div>
@@ -319,16 +338,16 @@ const TeacherEditor: React.FC<Props> = ({ onOpenClassroom }) => {
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-6 no-print">
            <div className="bg-white rounded-[3rem] p-12 max-w-2xl w-full shadow-2xl">
               <h3 className="text-3xl font-black text-slate-800 mb-2">批量导入文本</h3>
-              <p className="text-slate-400 mb-8 font-medium">每行文字自动生成一个句段 (默认为不选为作业)。</p>
+              <p className="text-slate-400 mb-8 font-medium">每行文字自动生成一个句段。</p>
               <textarea className="w-full h-72 p-8 bg-slate-50 rounded-[2rem] border-2 border-slate-100 focus:outline-none focus:border-indigo-400 font-medium text-lg" placeholder="在此粘贴多行文本..." value={batchText} onChange={(e) => setBatchText(e.target.value)}></textarea>
               <div className="flex gap-4 mt-10">
-                 <button onClick={() => setShowBatchModal(false)} className="flex-1 py-5 bg-slate-100 rounded-2xl font-bold text-slate-500">取消</button>
+                 <button onClick={() => setShowBatchModal(false)} className="flex-1 py-5 bg-slate-100 rounded-2xl font-bold text-slate-500 transition-colors">取消</button>
                  <button onClick={() => {
                    const lines = batchText.split('\n').filter(l => l.trim().length > 0);
                    const newLyrics: LyricLine[] = lines.map((text) => ({ id: Math.random().toString(36).substr(2, 9), startTime: 0, endTime: 0, chinese: text.trim(), pinyin: '', english: '', vocabs: [], isHomework: false }));
                    setLesson({ ...lesson, lyrics: [...lesson.lyrics, ...newLyrics] });
                    setBatchText(''); setShowBatchModal(false);
-                 }} className="flex-1 py-5 bg-indigo-600 rounded-2xl font-bold text-white">确认导入</button>
+                 }} className="flex-1 py-5 bg-indigo-600 rounded-2xl font-bold text-white transition-colors">确认导入</button>
               </div>
            </div>
         </div>
